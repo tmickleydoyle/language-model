@@ -14,6 +14,7 @@ A PyTorch implementation of a GPT (Generative Pre-trained Transformer) model wit
 
 ## Project Structure 
 
+```text
 gpt/
 ├── bpe.py # BPE tokenizer implementation
 ├── config.py # Configuration settings
@@ -21,6 +22,7 @@ gpt/
 ├── model.py # GPT model architecture
 ├── train.py # Training and inference logic
 └── input.txt # Your training data
+```
 
 ## Requirements
 
