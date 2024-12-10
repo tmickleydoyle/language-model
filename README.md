@@ -1,3 +1,5 @@
+Work in Progress. I am still building the elements I need...
+
 # GPT Implementation
 
 A PyTorch implementation of a GPT (Generative Pre-trained Transformer) model with Byte-Pair Encoding (BPE) tokenization. This implementation is designed to be educational and extensible, allowing for training on custom text datasets.
