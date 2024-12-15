@@ -13,6 +13,10 @@ import os
 class BPE:
     """
     The Byte Pair Encoding (BPE) class.
+
+    Attributes:
+        merges (Dict[Tuple[int, int], int]): The merges of token ids.
+        vocab (Dict[int, bytes]): The vocabulary of token ids.
     """
     def __init__(self) -> None:
         super().__init__()
@@ -139,7 +143,7 @@ class BPE:
             idx = self.merges[pair]
             ids = self.merge(ids, pair, idx)
         return ids
-    
+
     def save_encoder(self, path: str = "encoder.txt") -> None:
         """
         Save the encoder (vocab and merges) to a file.
@@ -238,4 +242,3 @@ class BPE:
 # # new_decoded = new_bpe.decode(new_encoded)
 # # print(f"New Encoded: {new_encoded}")
 # # print(f"New Decoded: {new_decoded}")
-
