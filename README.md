@@ -1,4 +1,5 @@
-Work in Progress. I am still building the elements I need...
+
+![6051164](https://github.com/user-attachments/assets/5bb5bbcc-cf70-4e7f-94f1-bbe5e51caf3e)
 
 # GPT Implementation
 
