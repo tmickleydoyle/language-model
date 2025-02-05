@@ -29,9 +29,9 @@ class Config:
     vocab_size = 1008  # Added this parameter for BPE tokenizer
 
     # Training hyperparameters
-    max_iters = 2500
+    max_iters = 5000
     eval_interval = 500
-    learning_rate = 3e-4
+    learning_rate = 2e-4
     eval_iters = 200
 
     # System
