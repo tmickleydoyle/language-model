@@ -20,19 +20,19 @@ class Config:
         seed: Random seed for reproducibility.
     """
     # Model hyperparameters
-    batch_size = 16  # how many independent sequences will we process in parallel?
-    block_size = 128   # maximum context length for predictions
-    n_embd = 384    # embedding dimension
-    n_head = 8      # number of attention heads
-    n_layer = 8     # number of transformer blocks
+    batch_size = 64  # how many independent sequences will we process in parallel?
+    block_size = 256   # maximum context length for predictions
+    n_embd = 384*2    # embedding dimension
+    n_head = 4      # number of attention heads
+    n_layer = 4     # number of transformer blocks
     dropout = 0.05   # dropout rate
     vocab_size = 1008  # Added this parameter for BPE tokenizer
 
     # Training hyperparameters
-    max_iters = 5000
-    eval_interval = 500
+    max_iters = 500
+    eval_interval = 100
     learning_rate = 2e-4
-    eval_iters = 200
+    eval_iters = 100
 
     # System
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
