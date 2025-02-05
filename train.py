@@ -54,7 +54,7 @@ def train():
     loaded_model = loaded_model.to(config.device)
 
     # Example question
-    question = "What is Monstera?"
+    question = "Metrics are "
     new_context = dataset.encode(question)
     print("Encoded question:", new_context)
 
