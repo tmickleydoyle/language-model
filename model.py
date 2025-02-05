@@ -157,9 +157,13 @@ class GPTLanguageModel(nn.Module):
     def generate(self, idx, max_new_tokens):
         """
         Autoregressively generate new tokens.
-        idx: (B, T) input token indices.
+        idx: (B, T) input token indices, as a tensor or list.
         max_new_tokens: number of tokens to generate.
         """
+        # Ensure idx is a torch.Tensor
+        if not isinstance(idx, torch.Tensor):
+            idx = torch.tensor(idx, dtype=torch.long, device=self.config.device)
+        
         # Switch to evaluation mode and disable dropout
         self.eval()
         with torch.no_grad():
@@ -190,7 +194,7 @@ if __name__ == '__main__':
     except Exception as e:
         print("TorchScript compilation failed:", e)
 
-    # Dummy input
+    # Dummy input for training
     B, T = 4, 64  # batch size and sequence length
     idx = torch.randint(0, vocab_size, (B, T), device=config.device)
     targets = torch.randint(0, vocab_size, (B, T), device=config.device)
@@ -200,7 +204,7 @@ if __name__ == '__main__':
     logits, loss = model(idx, targets)
     print("Training loss:", loss.item())
 
-    # Inference generation example
-    prompt = torch.randint(0, vocab_size, (B, T), device=config.device)
+    # Inference generation example (simulate a list input to trigger the conversion)
+    prompt = [list(torch.randint(0, vocab_size, (T,)).tolist()) for _ in range(B)]
     generated = model.generate(prompt, max_new_tokens=20)
     print("Generated shape:", generated.shape)
