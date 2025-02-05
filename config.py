@@ -20,13 +20,13 @@ class Config:
         seed: Random seed for reproducibility.
     """
     # Model hyperparameters
-    batch_size = 64  # how many independent sequences will we process in parallel?
+    batch_size = 16  # how many independent sequences will we process in parallel?
     block_size = 128   # maximum context length for predictions
     n_embd = 384    # embedding dimension
-    n_head = 6      # number of attention heads
-    n_layer = 6     # number of transformer blocks
-    dropout = 0.2   # dropout rate
-    vocab_size = 512  # Added this parameter for BPE tokenizer
+    n_head = 8      # number of attention heads
+    n_layer = 8     # number of transformer blocks
+    dropout = 0.05   # dropout rate
+    vocab_size = 1008  # Added this parameter for BPE tokenizer
 
     # Training hyperparameters
     max_iters = 2500
