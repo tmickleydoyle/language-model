@@ -139,3 +139,716 @@ Self-explanatory metrics and chart types that avoid unnecessary complexity.
 By following these principles, users should be able to interpret the results of their data exploration without needing to involve the data team for clarification.
 
 6. Other Dashboards Outside of Metrics While the metrics dashboards are owned and maintained by the data team to ensure consistency and reliability, other dashboards can be created outside of this framework. These dashboards might focus on specific team needs, projects, or ad hoc analyses, and do not have to follow the strict design guidelines laid out for metrics dashboards. However, they will remain separate from the core metrics dashboards and may not be certified by the data team.
+
+
+<startofcode> 
+
+def is_prime(n: int) -> bool:
+    """Check if number is prime."""
+    if n < 2: return False
+    for i in range(2, int(n**0.5)+1):
+        if n % i == 0: return False
+    return True
+
+<endofcode>
+<startofcode>
+
+def digital_root(n: int) -> int:
+    """Calculate digital root (recursive sum of digits)."""
+    while n >= 10:
+        n = sum(int(d) for d in str(n))
+    return n
+
+<endofcode>
+<startofcode>
+
+from math import factorial
+
+def factorial_digits(n: int) -> int:
+    """Sum of factorials of each digit."""
+    return sum(factorial(int(d)) for d in str(n))
+
+<endofcode>
+<startofcode>
+
+def is_armstrong(n: int) -> bool:
+    """Check if number is Armstrong number."""
+    digits = str(n)
+    return n == sum(int(d)**len(digits) for d in digits)
+
+<endofcode>
+<startofcode>
+
+def collatz_sequence(n: int) -> list:
+    """Generate Collatz sequence starting with n."""
+    sequence = [n]
+    while n != 1:
+        n = n // 2 if n % 2 == 0 else 3 * n + 1
+        sequence.append(n)
+    return sequence
+
+<endofcode>
+<startofcode>
+
+def alternating_case(s: str) -> str:
+    """Convert string to alternating case."""
+    return ''.join([c.upper() if i%2==0 else c.lower() for i,c in enumerate(s)])
+
+<endofcode>
+<startofcode>
+
+def is_heterogram(s: str) -> bool:
+    """Check if all characters in string are unique."""
+    return len(set(s.lower())) == len(s)
+
+<endofcode>
+<startofcode>
+
+def caesar_cipher(s: str, shift: int) -> str:
+    """Implement Caesar cipher with given shift."""
+    result = []
+    for c in s:
+        if c.isalpha():
+            base = ord('A') if c.isupper() else ord('a')
+            result.append(chr((ord(c) - base + shift) % 26 + base))
+        else:
+            result.append(c)
+    return ''.join(result)
+
+<endofcode>
+<startofcode>
+
+def count_consonants(s: str) -> int:
+    """Count number of consonants in string."""
+    vowels = 'aeiouAEIOU'
+    return sum(1 for c in s if c.isalpha() and c not in vowels)
+
+<endofcode>
+<startofcode>
+
+def is_pangram(s: str) -> bool:
+    """Check if string contains all English alphabet letters."""
+    return len(set(c.lower() for c in s if c.isalpha())) == 26
+
+<endofcode>
+<startofcode>
+
+def rotate_matrix(matrix: list) -> list:
+    """Rotate 2D matrix 90 degrees clockwise."""
+    return [list(row) for row in zip(*matrix[::-1])]
+
+<endofcode>
+<startofcode>
+
+def chunk_list(lst: list, size: int) -> list:
+    """Split list into chunks of given size."""
+    return [lst[i:i+size] for i in range(0, len(lst), size)]
+
+<endofcode>
+<startofcode>
+
+def list_xor(n: int, lst1: list, lst2: list) -> list:
+    """Elements present in either list but not both."""
+    return [x for x in lst1 + lst2 if (x in lst1) ^ (x in lst2)]
+
+<endofcode>
+<startofcode>
+
+def diagonal_difference(matrix: list) -> int:
+    """Calculate absolute difference of matrix diagonals."""
+    n = len(matrix)
+    return abs(sum(matrix[i][i] - matrix[i][n-1-i] for i in range(n)))
+
+<endofcode>
+<startofcode>
+
+def bubble_sort(lst: list) -> list:
+    """Implement bubble sort algorithm."""
+    arr = lst.copy()
+    for i in range(len(arr)-1):
+        for j in range(len(arr)-1-i):
+            if arr[j] > arr[j+1]:
+                arr[j], arr[j+1] = arr[j+1], arr[j]
+    return arr
+
+<endofcode>
+<startofcode>
+
+def invert_dictionary(d: dict) -> dict:
+    """Swap dictionary keys and values."""
+    return {v: k for k, v in d.items()}
+
+<endofcode>
+<startofcode>
+
+def deep_flatten(nested_iterable) -> list:
+    """Flatten deeply nested iterables."""
+    result = []
+    for item in nested_iterable:
+        if isinstance(item, (list, tuple)):
+            result.extend(deep_flatten(item))
+        else:
+            result.append(item)
+    return result
+
+<endofcode>
+<startofcode>
+
+def set_operations(a: set, b: set) -> dict:
+    """Return union, intersection, and difference of sets."""
+    return {
+        'union': a | b,
+        'intersection': a & b,
+        'difference': a - b
+    }
+
+<endofcode>
+<startofcode>
+
+def word_frequency(text: str) -> dict:
+    """Count frequency of words in text."""
+    words = text.lower().split()
+    return {word: words.count(word) for word in set(words)}
+
+<endofcode>
+<startofcode>
+
+import heapq
+
+def priority_queue(operations: list) -> list:
+    """Simulate priority queue (max-heap behavior)."""
+    heap = []
+    result = []
+    for op in operations:
+        if op == 'pop':
+            result.append(-heapq.heappop(heap) if heap else None)
+        else:
+            heapq.heappush(heap, -op)
+    return result
+
+<endofcode>
+<startofcode>
+
+from datetime import date
+
+def age_in_days(birthdate: str) -> int:
+    """Calculate age in days from YYYY-MM-DD date."""
+    today = date.today()
+    born = date.fromisoformat(birthdate)
+    return (today - born).days
+
+<endofcode>
+<startofcode>
+
+from datetime import datetime, timedelta
+
+def time_until_new_year() -> str:
+    """Calculate time remaining until next New Year."""
+    now = datetime.now()
+    next_year = datetime(now.year + 1, 1, 1)
+    delta = next_year - now
+    return str(delta).split('.')[0]
+
+<endofcode>
+<startofcode>
+
+from datetime import datetime
+
+def is_valid_date(date_str: str) -> bool:
+    """Validate date string in YYYY-MM-DD format."""
+    try:
+        datetime.fromisoformat(date_str)
+        return True
+    except ValueError:
+        return False
+
+<endofcode>
+<startofcode>
+
+from datetime import date, timedelta
+
+def business_days(start: str, end: str) -> int:
+    """Count weekdays between two dates."""
+    start_date = date.fromisoformat(start)
+    end_date = date.fromisoformat(end)
+    delta = end_date - start_date
+    return sum(1 for day in range(delta.days + 1)
+               if (start_date + timedelta(day)).weekday() < 5)
+
+<endofcode>
+<startofcode> 
+
+def binary_search(arr: list, target) -> int:
+    """Implement binary search, return index or -1."""
+    low, high = 0, len(arr)-1
+    while low <= high:
+        mid = (low + high) // 2
+        if arr[mid] == target:
+            return mid
+        elif arr[mid] < target:
+            low = mid + 1
+        else:
+            high = mid - 1
+    return -1
+
+<endofcode>
+<startofcode>
+
+def tower_of_hanoi(n: int, source: str, auxiliary: str, target: str) -> list:
+    """Generate solution steps for Tower of Hanoi problem."""
+    moves = []
+    def _hanoi(n, src, aux, tgt):
+        if n > 0:
+            _hanoi(n-1, src, tgt, aux)
+            moves.append(f"Move disk {n} from {src} to {tgt}")
+            _hanoi(n-1, aux, src, tgt)
+    _hanoi(n, source, auxiliary, target)
+    return moves
+
+<endofcode>
+<startofcode>
+
+from math import gcd
+
+def lcm(a: int, b: int) -> int:
+    """Calculate Least Common Multiple."""
+    return abs(a * b) // gcd(a, b) if a and b else 0
+
+<endofcode>
+<startofcode>
+
+def is_harshad_number(n: int) -> bool:
+    """Check if number is a Harshad number."""
+    if n == 0: return False
+    return n % sum(int(d) for d in str(n)) == 0
+
+<endofcode>
+<startofcode>
+
+def sieve_of_eratosthenes(n: int) -> list:
+    """Generate primes up to n using Sieve of Eratosthenes."""
+    sieve = [True] * (n+1)
+    sieve[:2] = [False, False]
+    for num in range(2, int(n**0.5)+1):
+        if sieve[num]:
+            sieve[num*num : n+1 : num] = [False]*len(sieve[num*num : n+1 : num])
+    return [i for i, prime in enumerate(sieve) if prime]
+
+<endofcode>
+<startofcode>
+
+def roman_to_int(s: str) -> int:
+    """Convert Roman numeral to integer."""
+    roman = {'I':1, 'V':5, 'X':10, 'L':50, 'C':100, 'D':500, 'M':1000}
+    total = 0
+    prev_value = 0
+    for char in reversed(s):
+        value = roman[char]
+        total += value if value >= prev_value else -value
+        prev_value = value
+    return total
+
+<endofcode>
+<startofcode>
+
+def int_to_binary(n: int) -> str:
+    """Convert integer to binary string without 0b prefix."""
+    return bin(n)[2:]
+
+<endofcode>
+<startofcode>
+
+def hex_to_rgb(hex_color: str) -> tuple:
+    """Convert hex color code to RGB tuple."""
+    hex_color = hex_color.lstrip('#')
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+<endofcode>
+<startofcode>
+
+import re
+
+def is_valid_email(email: str) -> bool:
+    """Basic email format validation."""
+    pattern = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
+    return re.match(pattern, email) is not None
+
+<endofcode>
+<startofcode>
+
+def password_strength(password: str) -> str:
+    """Evaluate password strength."""
+    length = len(password)
+    has_upper = any(c.isupper() for c in password)
+    has_lower = any(c.islower() for c in password)
+    has_digit = any(c.isdigit() for c in password)
+    has_special = any(not c.isalnum() for c in password)
+    
+    score = sum([length >= 8, has_upper, has_lower, has_digit, has_special])
+    return ["Weak", "Fair", "Good", "Strong", "Very Strong"][min(score, 4)]
+
+<endofcode>
+<startofcode>
+
+def quadratic_roots(a: float, b: float, c: float) -> tuple:
+    """Find roots of quadratic equation."""
+    discriminant = b**2 - 4*a*c
+    if discriminant < 0:
+        return (None, None)
+    sqrt_discriminant = discriminant**0.5
+    return (
+        (-b + sqrt_discriminant)/(2*a),
+        (-b - sqrt_discriminant)/(2*a)
+    )
+
+<endofcode>
+<startofcode>
+
+def matrix_multiply(a: list, b: list) -> list:
+    """Multiply two matrices."""
+    return [[sum(x*y for x,y in zip(row, col)) for col in zip(*b)] for row in a]
+
+<endofcode>
+<startofcode>
+
+from math import prod
+
+def geometric_mean(numbers: list) -> float:
+    """Calculate geometric mean."""
+    return prod(numbers) ** (1/len(numbers)) if numbers else None
+
+<endofcode>
+<startofcode>
+
+def is_abundant_number(n: int) -> bool:
+    """Check if number is abundant (sum of proper divisors > number)."""
+    if n < 1: return False
+    return sum(i for i in range(1, n//2+1) if n % i == 0) > n
+
+<endofcode>
+<startofcode>
+
+def vector_dot_product(v1: list, v2: list) -> float:
+    """Calculate dot product of two vectors."""
+    return sum(x*y for x,y in zip(v1, v2))
+
+<endofcode>
+<startofcode>
+
+def calculate_bmi(weight: float, height: float) -> float:
+    """Calculate Body Mass Index."""
+    return weight / (height ** 2)
+
+<endofcode>
+<startofcode>
+
+def days_in_month(month: int, year: int) -> int:
+    """Return number of days in month."""
+    import calendar
+    return calendar.monthrange(year, month)[1]
+
+<endofcode>
+<startofcode>
+
+def count_words(s: str) -> int:
+    """Count number of words in string."""
+    return len(s.split())
+
+<endofcode>
+<startofcode>
+
+def remove_duplicates(lst: list) -> list:
+    """Remove duplicates from list while preserving order."""
+    seen = set()
+    return [x for x in lst if not (x in seen or seen.add(x))]
+
+<endofcode>
+<startofcode>
+
+def list_of_squares(n: int) -> list:
+    """Return list of squares up to n."""
+    return [i**2 for i in range(1, n+1)]
+
+<endofcode>
+<startofcode>
+
+def hypotenuse(a: float, b: float) -> float:
+    """Calculate hypotenuse of right triangle."""
+    import math
+    return math.sqrt(a**2 + b**2)
+
+<endofcode>
+<startofcode>
+
+def time_greeting() -> str:
+    """Return greeting based on current time."""
+    from datetime import datetime
+    hour = datetime.now().hour
+    if 5 <= hour < 12: return "Good morning!"
+    elif 12 <= hour < 18: return "Good afternoon!"
+    else: return "Good evening!"
+
+<endofcode>
+<startofcode>
+
+def multiply_list(numbers: list) -> float:
+    """Multiply all numbers in list."""
+    result = 1
+    for num in numbers:
+        result *= num
+    return result
+
+<endofcode>
+<startofcode>
+
+def count_occurrences(lst: list, target) -> int:
+    """Count occurrences of target in list."""
+    return lst.count(target)
+
+<endofcode>
+<startofcode>
+
+def is_anagram(s1: str, s2: str) -> bool:
+    """Check if two strings are anagrams."""
+    return sorted(s1.lower()) == sorted(s2.lower())
+
+<endofcode>
+<startofcode>
+
+def linear_search(lst: list, target) -> int:
+    """Perform linear search, return index or -1."""
+    for i, item in enumerate(lst):
+        if item == target:
+            return i
+    return -1
+
+<endofcode>
+<startofcode>
+
+def string_to_list(s: str) -> list:
+    """Convert string to list of characters."""
+    return list(s)
+
+<endofcode>
+<startofcode>
+
+def list_to_string(lst: list) -> str:
+    """Convert list of characters to string."""
+    return ''.join(lst)
+
+<endofcode>
+<startofcode>
+
+def read_file(filename: str) -> str:
+    """Read and return file contents."""
+    with open(filename, 'r') as f:
+        return f.read()
+
+<endofcode>
+<startofcode>
+
+def write_file(filename: str, content: str) -> None:
+    """Write content to file."""
+    with open(filename, 'w') as f:
+        f.write(content)
+
+<endofcode>
+<startofcode>
+
+def is_integer(n) -> bool:
+    """Check if input is integer."""
+    return isinstance(n, int)
+
+<endofcode>
+<startofcode>
+
+def is_string(n) -> bool:
+    """Check if input is string."""
+    return isinstance(n, str)
+
+<endofcode>
+<startofcode>
+
+def is_list(n) -> bool:
+    """Check if input is list."""
+    return isinstance(n, list)
+
+<endofcode>
+<startofcode>
+
+def celsius_to_fahrenheit(c: float) -> float:
+    """Convert Celsius to Fahrenheit."""
+    return (c * 9/5) + 32
+
+<endofcode>
+<startofcode>
+
+def fahrenheit_to_celsius(f: float) -> float:
+    """Convert Fahrenheit to Celsius."""
+    return (f - 32) * 5/9
+
+<endofcode>
+<startofcode>
+
+def average(numbers: list) -> float:
+    """Calculate average of numbers."""
+    return sum(numbers)/len(numbers) if numbers else None
+
+<endofcode>
+<startofcode>
+
+def factorial_recursive(n: int) -> int:
+    """Calculate factorial using recursion."""
+    return 1 if n <= 1 else n * factorial_recursive(n-1)
+
+<endofcode>
+<startofcode>
+
+def fibonacci_recursive(n: int) -> int:
+    """Return nth Fibonacci number using recursion."""
+    return n if n <= 1 else fibonacci_recursive(n-1) + fibonacci_recursive(n-2)
+
+<endofcode>
+<startofcode>
+
+def gcd_recursive(a: int, b: int) -> int:
+    """Calculate GCD using Euclidean algorithm."""
+    return a if b == 0 else gcd_recursive(b, a % b)
+
+<endofcode>
+<startofcode>
+
+def sum_even_numbers(numbers: list) -> float:
+    """Sum all even numbers in list."""
+    return sum(num for num in numbers if num % 2 == 0)
+
+<endofcode>
+<startofcode>
+
+def factorial_loop(n: int) -> int:
+    """Calculate factorial using loop."""
+    result = 1
+    for i in range(1, n+1):
+        result *= i
+    return result
+
+<endofcode>
+<startofcode>
+
+def fibonacci_sequence(n: int) -> list:
+    """Generate Fibonacci sequence up to n terms."""
+    sequence = [0, 1]
+    while len(sequence) < n:
+        sequence.append(sequence[-1] + sequence[-2])
+    return sequence[:n]
+
+<endofcode>
+<startofcode>
+
+def is_leap_year(year: int) -> bool:
+    """Check if year is a leap year."""
+    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+
+<endofcode>
+<startofcode>
+
+def get_season(month: int) -> str:
+    """Return season based on month number."""
+    if 3 <= month <= 5:
+        return "Spring"
+    elif 6 <= month <= 8:
+        return "Summer"
+    elif 9 <= month <= 11:
+        return "Autumn"
+    else:
+        return "Winter"
+
+<endofcode>
+<startofcode>
+
+def get_grade(score: float) -> str:
+    """Convert numerical score to letter grade."""
+    if score >= 90: return "A"
+    elif score >= 80: return "B"
+    elif score >= 70: return "C"
+    elif score >= 60: return "D"
+    else: return "F"
+
+<endofcode>
+<startofcode>
+
+def sum_list(numbers: list) -> float:
+    """Return sum of list elements."""
+    return sum(numbers)
+
+<endofcode>
+<startofcode>
+
+def max_in_list(numbers: list) -> float:
+    """Find maximum value in list."""
+    return max(numbers) if numbers else None
+
+<endofcode>
+<startofcode>
+
+def reverse_list(lst: list) -> list:
+    """Return reversed list."""
+    return lst[::-1]
+
+<endofcode>
+<startofcode>
+
+def flatten_list(nested_list: list) -> list:
+    """Flatten a nested list."""
+    flattened = []
+    for item in nested_list:
+        if isinstance(item, list):
+            flattened.extend(flatten_list(item))
+        else:
+            flattened.append(item)
+    return flattened
+
+<endofcode>
+<startofcode>
+
+def are_all_unique(lst: list) -> bool:
+    """Check if all elements in list are unique."""
+    return len(lst) == len(set(lst))
+
+<endofcode>
+<startofcode>
+
+def add(a: float, b: float) -> float:
+    """Return the sum of two numbers."""
+    return a + b
+
+<endofcode>
+<startofcode>
+
+def subtract(a: float, b: float) -> float:
+    """Subtract b from a."""
+    return a - b
+
+<endofcode>
+<startofcode>
+
+def multiply(a: float, b: float) -> float:
+    """Multiply two numbers."""
+    return a * b
+
+<endofcode>
+<startofcode>
+
+def divide(a: float, b: float) -> float:
+    """Divide a by b. Returns None if b is 0."""
+    return a / b if b != 0 else None
+
+<endofcode>
+<startofcode>
+
+def power(base: float, exponent: float) -> float:
+    """Calculate base raised to the exponent power."""
+    return base ** exponent
+
+<endofcode>
+
