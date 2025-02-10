@@ -12,6 +12,7 @@ class Config:
         n_layer: Number of transformer blocks.
         dropout: Dropout rate.
         vocab_size: Size of the vocabulary.
+        n_experts: Number of experts for MoE.
         max_iters: Maximum number of training iterations.
         eval_interval: Number of iterations between evaluation runs.
         learning_rate: Learning rate for the optimizer.
@@ -27,6 +28,7 @@ class Config:
     n_layer = 4     # number of transformer blocks
     dropout = 0.05   # dropout rate
     vocab_size = 2500  # Added this parameter for BPE tokenizer
+    n_experts = 8  # Number of experts for MoE
 
     # Training hyperparameters
     max_iters = 2500
