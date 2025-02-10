@@ -2,23 +2,24 @@ import torch
 from config import Config
 from data import TextDataset
 from model import GPTLanguageModel
+from modelMoE import GPTLanguageModelMoE
 
 def train():
     # Initialize configuration
     config = Config()
-    
+
     # Load and prepare data
     dataset = TextDataset(config)
     dataset.load_data('input.txt')
-    
+
     # Initialize model with actual vocabulary size from dataset
-    model = GPTLanguageModel(config, dataset.vocab_size)
+    model = GPTLanguageModelMoE(config, dataset.vocab_size)
     model = model.to(config.device)
     print(f'{sum(p.numel() for p in model.parameters())/1e6:.2f}M parameters')
-    
+
     # Initialize optimizer
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate)
-    
+
     @torch.no_grad()
     def estimate_loss():
         out = {}
@@ -32,7 +33,7 @@ def train():
             out[split] = losses.mean().item()
         model.train()
         return out
-    
+
     # Training loop
     for iter in range(config.max_iters):
         if iter % config.eval_interval == 0:
@@ -49,7 +50,7 @@ def train():
     torch.save(model.state_dict(), 'model.pth')
 
     # Load the model for inference
-    loaded_model = GPTLanguageModel(config, dataset.vocab_size)
+    loaded_model = GPTLanguageModelMoE(config, dataset.vocab_size)
     loaded_model.load_state_dict(torch.load('model.pth'))
     loaded_model = loaded_model.to(config.device)
 
