@@ -1,104 +1,169 @@
+# GPT Language Model
 
-![6051164](https://github.com/user-attachments/assets/5bb5bbcc-cf70-4e7f-94f1-bbe5e51caf3e)
+A production-quality PyTorch implementation of GPT (Generative Pre-trained Transformer) models with clean, simple interface.
 
-# GPT Implementation
+## Quick Start
 
-A PyTorch implementation of a GPT (Generative Pre-trained Transformer) model with Byte-Pair Encoding (BPE) tokenization. This implementation is designed to be educational and extensible, allowing for training on custom text datasets.
+The project provides three main scripts for all your language model needs:
 
-## Features
+### 1. Train a Model
+```bash
+python train.py example/raw/example.txt -o my_model
+```
 
-- Transformer-based architecture with multi-head self-attention
-- Byte-Pair Encoding (BPE) tokenization
-- Configurable model parameters
-- Training and inference capabilities
-- Support for custom text datasets
+### 2. Fine-tune on Q&A Data  
+```bash
+python fine-tune.py my_model example/fine-tuned/story_qa_dataset.json -o fine_tuned_model
+```
 
-## Project Structure 
+### 3. Ask Questions
+```bash
+python ask.py fine_tuned_model --interactive
+```
 
-```text
-gpt/
-├── bpe.py # BPE tokenizer implementation
-├── config.py # Configuration settings
-├── data.py # Dataset handling and preprocessing
-├── model.py # GPT model architecture
-├── train.py # Training and inference logic
-└── input.txt # Your training data
+## Installation
+
+```bash
+git clone <repository-url>
+cd language-model
+pip install -r requirements.txt
+```
+
+## Project Structure
+
+```
+language-model/
+├── src/                     # Source code modules
+│   ├── config.py            # Configuration management
+│   ├── model/               # GPT model implementation
+│   ├── tokenizer/           # BPE tokenizer
+│   ├── data/                # Dataset handling
+│   ├── training/            # Training infrastructure
+│   └── utils/               # Utility functions
+├── tests/                   # Test suite
+├── example/                 # Training datasets
+│   ├── raw/                 # Raw text for training
+│   └── fine-tuned/          # Q&A datasets
+├── train.py                 # Main training script
+├── fine-tune.py             # Fine-tuning script
+├── ask.py                   # Interactive Q&A script
+└── README.md                # This file
+```
+
+## Usage Guide
+
+### Training a Model
+
+Train a GPT model from scratch:
+
+```bash
+# Basic training
+python train.py example/raw/example.txt
+
+# Custom model architecture
+python train.py example/raw/example.txt \
+    --vocab-size 8000 \
+    --embedding-dim 512 \
+    --num-heads 8 \
+    --num-layers 8 \
+    --iterations 5000 \
+    --batch-size 16 \
+    -o custom_model
+```
+
+**Options:**
+- `--vocab-size`: Vocabulary size (default: 1500)
+- `--embedding-dim`: Embedding dimension (default: 192)
+- `--num-heads`: Number of attention heads (default: 6)
+- `--num-layers`: Number of layers (default: 4)
+- `--context-size`: Context window size (default: 96)
+- `--iterations`: Training iterations (default: 300)
+- `--batch-size`: Batch size (default: 32)
+- `--learning-rate`: Learning rate (default: 3e-4)
+- `-o, --output`: Output directory name
+
+### Fine-tuning a Model
+
+Fine-tune a trained model on Q&A data:
+
+```bash
+# Basic fine-tuning
+python fine-tune.py my_model example/fine-tuned/story_qa_dataset.json
+
+# Custom fine-tuning
+python fine-tune.py my_model example/fine-tuned/story_qa_dataset.json \
+    --epochs 10 \
+    --batch-size 8 \
+    --learning-rate 1e-5 \
+    -o specialized_model
+```
+
+**Options:**
+- `--epochs`: Number of training epochs (default: 8)
+- `--batch-size`: Batch size (default: 4)
+- `--learning-rate`: Learning rate (default: 1e-5)
+- `-o, --output`: Output directory name
+
+### Asking Questions
+
+Interact with your fine-tuned model:
+
+```bash
+# Interactive mode
+python ask.py fine_tuned_model --interactive
+
+# Single question
+python ask.py fine_tuned_model --question "What is the meaning of life?"
+
+# Batch processing
+python ask.py fine_tuned_model --file questions.txt
+
+# Custom generation settings
+python ask.py fine_tuned_model --interactive --temperature 0.7
+```
+
+**Options:**
+- `--interactive`: Start interactive Q&A session
+- `--question`: Ask a single question
+- `--file`: Process questions from file
+- `--temperature`: Generation randomness (default: 0.7)
+
+## Data Formats
+
+### Training Data
+Plain text files for training:
+```
+example/raw/example.txt
+```
+
+### Fine-tuning Data
+JSON format with question-answer pairs:
+```json
+[
+    {
+        "instruction": "What is the capital of France?",
+        "output": "The capital of France is Paris."
+    },
+    {
+        "instruction": "Explain photosynthesis.",
+        "output": "Photosynthesis is the process by which plants convert sunlight into energy..."
+    }
+]
+```
+
+## Testing
+
+Run the test suite:
+```bash
+pytest
 ```
 
 ## Requirements
 
 - Python 3.8+
 - PyTorch 1.8+
-- typing
-- collections
-
-## Quick Start
-
-1. Place your training text in `input.txt`
-
-2. Configure the model in `config.py`:
-
-```python
-python
-class Config:
-batch_size = 64 # batch size for training
-block_size = 128 # context window size
-n_embd = 384 # embedding dimension
-n_head = 6 # number of attention heads
-n_layer = 6 # number of transformer blocks
-vocab_size = 512 # vocabulary size for BPE
-# ... other parameters
-```
-
-3. Run `python train.py` to train the model.
-
-## Components
-
-### BPE Tokenizer (bpe.py)
-Implements Byte-Pair Encoding for tokenization, starting with byte-level tokens and merging common pairs to build a vocabulary.
-
-### Dataset Handler (data.py)
-Manages data loading, tokenization, and batch generation for training.
-
-### Model Architecture (model.py)
-Implements the GPT architecture with:
-- Token and position embeddings
-- Multi-head self-attention
-- Feed-forward networks
-- Layer normalization
-
-### Training (train.py)
-Handles:
-- Model initialization
-- Training loop
-- Loss calculation
-- Model saving/loading
-- Text generation
-
-## Usage
-
-### Training
-The model will train on your input text and save the trained model to `model.pth`.
-
-### Text Generation
-After training, you can generate text by providing a prompt:
-
-```python
-question = "What is Monstera?"
-generated_text = model.generate(encoded_question, max_new_tokens=500)
-```
-
-## Customization
-
-- Adjust model size and training parameters in `config.py`
-- Modify the tokenization approach in `bpe.py`
-- Extend the model architecture in `model.py`
-- Customize the training loop in `train.py`
+- See `requirements.txt` for full dependencies
 
 ## License
 
-MIT License
-
-## Contributing
-
-Feel free to open issues or submit pull requests for improvements or bug fixes.
+MIT License - see LICENSE file for details.

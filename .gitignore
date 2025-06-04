@@ -44,6 +44,20 @@ input.txt
 encoder.txt
 decoder.txt
 
+# Checkpoints and models
+checkpoints/
+*_checkpoints/
+production_model/
+production_fine_tuned*/
+better_checkpoints/
+debug_checkpoints/
+fine_tuned_checkpoints/
+fine_tuned_working_model/
+robust_checkpoints/
+simple_checkpoints/
+*.pth
+tokenizer.json
+
 # Jupyter Notebook
 .ipynb_checkpoints
 *.ipynb
@@ -81,3 +95,10 @@ coverage.xml
 # Logs
 *.log
 logs/ 
+.aider*
+
+# Temporary files
+*.tmp
+*.temp
+qa_output.txt
+training.log
