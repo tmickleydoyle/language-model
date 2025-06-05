@@ -163,7 +163,3 @@ pytest
 - Python 3.8+
 - PyTorch 1.8+
 - See `requirements.txt` for full dependencies
-
-## License
-
-MIT License - see LICENSE file for details.
