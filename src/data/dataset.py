@@ -1,8 +1,12 @@
-"""
-Data loading and processing utilities for the GPT language model.
+"""Data loading and processing utilities for the GPT language model.
 
-This module provides classes for loading text data, applying tokenization,
-and creating batches for training and evaluation.
+This module provides comprehensive data handling functionality including:
+- Text data loading from files or strings with validation
+- Tokenization using BPE tokenizer with automatic training
+- Dataset creation for PyTorch training with proper train/validation splits
+- Batch generation with efficient tensor operations
+- Support for variable sequence lengths and padding
+- Comprehensive error handling and logging
 """
 
 import logging
@@ -16,13 +20,15 @@ logger = logging.getLogger(__name__)
 
 
 class TextDataset:
-    """
-    Text dataset class for loading and processing training data.
+    """Text dataset class for loading and processing training data.
 
-    This class handles:
-    - Loading text data from files or strings
-    - Tokenization using provided tokenizer
-    - Creating datasets for PyTorch DataLoader
+    This class provides comprehensive text data handling including:
+    - Flexible data loading from files or strings
+    - Automatic tokenization with BPE tokenizer training
+    - Train/validation data splitting
+    - Batch generation for training and evaluation
+    - Support for variable sequence lengths with padding
+    - Comprehensive validation and error handling
 
     Args:
         text: Optional raw text data string
@@ -34,21 +40,43 @@ class TextDataset:
         text: Raw text data
         tokenizer: BPE tokenizer instance
         block_size: Context window size
-        tokens: Tokenized data as list of integers
+        tokens: Tokenized data as tensor
+        train_data: Training data split
+        val_data: Validation data split
     """
 
-    # Type annotations for instance attributes
-    text: str
-    tokenizer: BPETokenizer
-    block_size: int
-    tokens: torch.Tensor
-    train_data: Optional[torch.Tensor]
-    val_data: Optional[torch.Tensor]
-    _vocab_size: Optional[int]
+    def __init__(
+        self,
+        text: Optional[str] = None,
+        file_path: Optional[str] = None,
+        tokenizer: Optional[BPETokenizer] = None,
+        block_size: int = 256,
+    ):
+        """Initialize the dataset with validation and setup."""
+        self._validate_initialization_params(text, file_path, tokenizer, block_size)
 
-    def __init__(self, text: Optional[str] = None, file_path: Optional[str] = None,
-                 tokenizer: Optional[BPETokenizer] = None, block_size: int = 256):
-        """Initialize the dataset."""
+        self.tokenizer = tokenizer
+        self.block_size = block_size
+
+        # Load and validate text data
+        self.text = self._load_text_data(text, file_path)
+
+        # Initialize tokenization and data splits
+        self.tokens = self._tokenize_text()
+        self.train_data: Optional[torch.Tensor] = None
+        self.val_data: Optional[torch.Tensor] = None
+        self._vocab_size: Optional[int] = None
+
+        self._log_initialization_info()
+
+    def _validate_initialization_params(
+        self,
+        text: Optional[str],
+        file_path: Optional[str],
+        tokenizer: Optional[BPETokenizer],
+        block_size: int,
+    ) -> None:
+        """Validate initialization parameters."""
         if text is None and file_path is None:
             raise ValueError("Either text or file_path must be provided")
 
@@ -61,55 +89,54 @@ class TextDataset:
         if block_size <= 0:
             raise ValueError("block_size must be positive")
 
-        self.tokenizer = tokenizer
-        self.block_size = block_size
-
-        # Load text data
+    def _load_text_data(self, text: Optional[str], file_path: Optional[str]) -> str:
+        """Load text data from file or use provided text."""
         if file_path is not None:
             validate_file_exists(file_path)
             with open(file_path, 'r', encoding='utf-8') as f:
-                self.text = f.read()
+                loaded_text = f.read()
         elif text is not None:
-            self.text = text
+            loaded_text = text
         else:
-            # This should never happen due to validation above, but satisfy mypy
-            self.text = ""
+            loaded_text = ""
 
-        # Allow empty text for testing, but warn
-        if not self.text or not self.text.strip():
-            self.text = ""
+        # Handle empty text with warning
+        if not loaded_text or not loaded_text.strip():
             logger.warning("Empty text provided to dataset")
+            return ""
 
-        # Tokenize the text
+        return loaded_text
+
+    def _tokenize_text(self) -> torch.Tensor:
+        """Tokenize the text and convert to tensor."""
         token_list = self.tokenizer.encode(self.text)
+        tokens = torch.tensor(token_list, dtype=torch.long)
 
-        # Convert to tensor for consistency with tests
-        self.tokens = torch.tensor(token_list, dtype=torch.long)
+        self._validate_tokenization(tokens)
+        return tokens
 
-        # Allow short text for testing, but provide helpful info
-        if len(self.tokens) == 0:
+    def _validate_tokenization(self, tokens: torch.Tensor) -> None:
+        """Validate tokenization results and provide warnings."""
+        if len(tokens) == 0:
             logger.warning("Text tokenization resulted in zero tokens")
-        elif len(self.tokens) == 1:
+        elif len(tokens) == 1:
             logger.warning("Text tokenization resulted in only 1 token")
-        elif len(self.tokens) < self.block_size + 1:
+        elif len(tokens) < self.block_size + 1:
             logger.warning(
-                f"Text has only {len(self.tokens)} tokens, but "
+                f"Text has only {len(tokens)} tokens, but "
                 f"block_size is {self.block_size}. This may cause issues "
                 f"during training."
             )
 
+    def _log_initialization_info(self) -> None:
+        """Log information about dataset initialization."""
         logger.info(
             f"Dataset initialized with {len(self.tokens)} tokens, "
             f"block_size={self.block_size}"
         )
 
-        # Initialize train/val data as None until load_data is called
-        self.train_data: Optional[torch.Tensor] = None
-        self.val_data: Optional[torch.Tensor] = None
-
     def load_data(self, file_path: str, train_split: float = 0.9) -> None:
-        """
-        Load text data and prepare for training.
+        """Load text data and prepare for training with validation.
 
         Args:
             file_path: Path to the text file
@@ -117,16 +144,28 @@ class TextDataset:
 
         Raises:
             FileNotFoundError: If the file doesn't exist
-            ValueError: If train_split is not between 0 and 1
+            ValueError: If train_split is not between 0 and 1 or file is empty
         """
+        self._validate_load_params(file_path, train_split)
+
+        logger.info(f"Loading data from {file_path}")
+
+        # Read and validate text data
+        text = self._read_text_file(file_path)
+
+        # Train tokenizer and process data
+        self._train_tokenizer(text)
+        self._create_data_splits(text, train_split)
+
+    def _validate_load_params(self, file_path: str, train_split: float) -> None:
+        """Validate parameters for data loading."""
         if not 0 < train_split < 1:
             raise ValueError(f"train_split must be between 0 and 1, got {train_split}")
 
         validate_file_exists(file_path)
 
-        logger.info(f"Loading data from {file_path}")
-
-        # Read text data
+    def _read_text_file(self, file_path: str) -> str:
+        """Read text from file with validation."""
         with open(file_path, 'r', encoding='utf-8') as f:
             text = f.read()
 
@@ -134,8 +173,10 @@ class TextDataset:
             raise ValueError(f"File {file_path} is empty or contains only whitespace")
 
         logger.info(f"Loaded {len(text):,} characters from {file_path}")
+        return text
 
-        # Train tokenizer
+    def _train_tokenizer(self, text: str) -> None:
+        """Train the tokenizer on the provided text."""
         try:
             self.tokenizer.train(
                 text=text,
@@ -149,7 +190,8 @@ class TextDataset:
             logger.error(f"Failed to train tokenizer: {e}")
             raise
 
-        # Tokenize and split data
+    def _create_data_splits(self, text: str, train_split: float) -> None:
+        """Create training and validation data splits."""
         try:
             tokens = self.tokenizer.encode(text)
             data_tensor = torch.tensor(tokens, dtype=torch.long)
@@ -169,11 +211,13 @@ class TextDataset:
             raise
 
     def save_tokenizer(self, file_path: str) -> None:
-        """
-        Save the trained tokenizer.
+        """Save the trained tokenizer with validation.
 
         Args:
             file_path: Base path for saving tokenizer files
+
+        Raises:
+            ValueError: If tokenizer hasn't been trained yet
         """
         if not self.tokenizer.vocab:
             raise ValueError("Tokenizer must be trained before saving")
@@ -182,8 +226,7 @@ class TextDataset:
         logger.info(f"Tokenizer saved to {file_path}")
 
     def load_tokenizer(self, file_path: str) -> None:
-        """
-        Load a pre-trained tokenizer.
+        """Load a pre-trained tokenizer with state update.
 
         Args:
             file_path: Base path for loading tokenizer files
@@ -194,14 +237,20 @@ class TextDataset:
 
     @property
     def vocab_size(self) -> int:
-        """Get the vocabulary size."""
+        """Get the vocabulary size with validation.
+
+        Returns:
+            Vocabulary size
+
+        Raises:
+            ValueError: If dataset hasn't been loaded yet
+        """
         if self._vocab_size is None:
             raise ValueError("Dataset must be loaded before accessing vocab_size")
         return self._vocab_size
 
     def encode(self, text: str) -> List[int]:
-        """
-        Encode text using the trained tokenizer.
+        """Encode text using the trained tokenizer.
 
         Args:
             text: Input text to encode
@@ -212,8 +261,7 @@ class TextDataset:
         return self.tokenizer.encode(text)
 
     def decode(self, token_ids: List[int]) -> str:
-        """
-        Decode token IDs back to text.
+        """Decode token IDs back to text.
 
         Args:
             token_ids: List of token IDs to decode
@@ -224,80 +272,97 @@ class TextDataset:
         return self.tokenizer.decode(token_ids)
 
     def __len__(self) -> int:
-        """Return the number of available training samples."""
+        """Return the number of available training samples with fallback handling."""
         if len(self.tokens) < 2:  # Need at least 2 tokens for input/target pair
             return 0
 
         # Normal case: return number of possible windows
         available_samples = max(0, len(self.tokens) - self.block_size)
 
-        # For test datasets with limited tokens, ensure we have at least 1 sample
-        # if we have enough tokens for at least a partial sequence, but only if
-        # the block_size is not excessively large compared to available tokens
+        # For test datasets with limited tokens, provide fallback
         if available_samples == 0 and len(self.tokens) >= 2:
-            # Only provide fallback sample if block_size is reasonable
-            # (not more than 10x tokens)
             if self.block_size <= len(self.tokens) * 10:
                 return 1
 
         return available_samples
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Get a single training sample."""
+        """Get a single training sample with proper bounds checking.
+
+        Args:
+            idx: Index of the sample to retrieve
+
+        Returns:
+            Tuple of (input_tensor, target_tensor)
+
+        Raises:
+            IndexError: If index is out of bounds or negative
+        """
+        self._validate_index(idx)
+
+        # Handle edge cases for small datasets
+        if len(self.tokens) < self.block_size:
+            return self._handle_small_dataset()
+
+        if len(self.tokens) == self.block_size:
+            return self._handle_exact_size_dataset()
+
+        # Normal case: get consecutive tokens
+        return self._get_normal_sample(idx)
+
+    def _validate_index(self, idx: int) -> None:
+        """Validate array index bounds."""
         if idx >= len(self):
-            raise IndexError(
-                f"Index {idx} out of range for dataset of length {len(self)}")
+            raise IndexError(f"Index {idx} out of range for dataset of length {len(self)}")
 
         if idx < 0:
             raise IndexError("Negative indexing not supported")
 
-        # If we have fewer tokens than block_size, we need to pad or adjust
-        if len(self.tokens) < self.block_size:
-            # Use all available tokens and pad the rest
-            available_tokens = len(self.tokens)
-            x = torch.zeros(self.block_size, dtype=torch.long)
-            y = torch.zeros(self.block_size, dtype=torch.long)
+    def _handle_small_dataset(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Handle datasets with fewer tokens than block_size."""
+        available_tokens = len(self.tokens)
+        x = torch.zeros(self.block_size, dtype=torch.long)
+        y = torch.zeros(self.block_size, dtype=torch.long)
 
-            # Fill with available tokens
-            x[:available_tokens] = self.tokens[:available_tokens]
-            if available_tokens > 1:
-                y[:available_tokens - 1] = self.tokens[1:available_tokens]
-                # y[available_tokens - 1:] remains 0 (already initialized)
-
-            return x, y
-
-        # If we have exactly block_size tokens, handle specially
-        if len(self.tokens) == self.block_size:
-            x = self.tokens[:self.block_size].clone()
-            y = torch.zeros(self.block_size, dtype=torch.long)
-            y[:-1] = self.tokens[1:]
-            # y[-1] remains 0
-            return x, y
-
-        # Normal case: get block_size consecutive tokens starting at idx
-        x = self.tokens[idx:idx + self.block_size].clone()
-        y = self.tokens[idx + 1:idx + self.block_size + 1].clone()
-
-        # Ensure we have exact block_size for both x and y
-        assert len(
-            x) == self.block_size, f"x has length {len(x)}, expected {self.block_size}"
-        assert len(
-            y) == self.block_size, f"y has length {len(y)}, expected {self.block_size}"
+        # Fill with available tokens
+        x[:available_tokens] = self.tokens[:available_tokens]
+        if available_tokens > 1:
+            y[:available_tokens - 1] = self.tokens[1:available_tokens]
 
         return x, y
 
-    def get_batch(self, batch_size: int,
-                  device: str = 'cpu') -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Generate a batch of data for training or validation.
+    def _handle_exact_size_dataset(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Handle datasets with exactly block_size tokens."""
+        x = self.tokens[:self.block_size].clone()
+        y = torch.zeros(self.block_size, dtype=torch.long)
+        y[:-1] = self.tokens[1:]
+        return x, y
+
+    def _get_normal_sample(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Get sample for normal case with sufficient tokens."""
+        x = self.tokens[idx:idx + self.block_size].clone()
+        y = self.tokens[idx + 1:idx + self.block_size + 1].clone()
+
+        # Validate tensor shapes
+        assert len(x) == self.block_size, f"x has length {len(x)}, expected {self.block_size}"
+        assert len(y) == self.block_size, f"y has length {len(y)}, expected {self.block_size}"
+
+        return x, y
+
+    def get_batch(
+        self, batch_size: int, device: str = "cpu"
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Generate a batch of data for training or validation.
 
         Args:
             batch_size: Number of samples in the batch
             device: Device to place tensors on
 
         Returns:
-            Tuple of (input_tensor, target_tensor) with shape
-            (batch_size, effective_block_size)
+            Tuple of (input_tensor, target_tensor) with shape (batch_size, effective_block_size)
+
+        Raises:
+            ValueError: If dataset is too short to generate batches
         """
         if len(self) == 0:
             raise ValueError("Dataset is too short to generate batches")
@@ -305,34 +370,70 @@ class TextDataset:
         # Use effective block size for small datasets
         effective_block_size = min(self.block_size, len(self.tokens) - 1)
 
-        # Generate random starting positions
-        indices = torch.randint(0, len(self), (batch_size,))
+        # Generate batch tensors
+        x, y = self._create_batch_tensors(batch_size, effective_block_size)
 
-        # Create input and target sequences
-        x = torch.stack([
-            self.tokens[i:i + effective_block_size].clone().detach()
-            for i in indices
-        ])
-        y = torch.stack([
-            self.tokens[i + 1:i + effective_block_size + 1].clone().detach()
-            for i in indices
-        ])
+        # Move to device and return
+        return x.to(device), y.to(device)
 
-        # Move to device
-        x = x.to(device)
-        y = y.to(device)
+    def _create_batch_tensors(
+        self, batch_size: int, effective_block_size: int
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Create input and target tensors for a batch."""
+        # Calculate valid range for starting indices
+        # Need at least effective_block_size + 1 tokens for input + target
+        max_start_idx = max(0, len(self.tokens) - effective_block_size - 1)
+
+        if max_start_idx == 0:
+            # Handle case where we don't have enough tokens
+            indices = torch.zeros(batch_size, dtype=torch.long)
+        else:
+            # Generate random starting positions within valid range
+            indices = torch.randint(0, max_start_idx, (batch_size,))
+
+        # Create input and target sequences with bounds checking
+        x_list = []
+        y_list = []
+
+        for i in indices:
+            # Ensure we don't exceed token bounds
+            end_idx = min(i + effective_block_size, len(self.tokens))
+            x_seq = self.tokens[i:end_idx].clone().detach()
+
+            # Pad with zeros if necessary
+            if len(x_seq) < effective_block_size:
+                padding = torch.zeros(effective_block_size - len(x_seq), dtype=torch.long)
+                x_seq = torch.cat([x_seq, padding])
+
+            x_list.append(x_seq)
+
+            # Create target sequence (offset by 1)
+            target_start = min(i + 1, len(self.tokens) - 1)
+            target_end = min(target_start + effective_block_size, len(self.tokens))
+            y_seq = self.tokens[target_start:target_end].clone().detach()
+
+            # Pad with zeros if necessary
+            if len(y_seq) < effective_block_size:
+                padding = torch.zeros(effective_block_size - len(y_seq), dtype=torch.long)
+                y_seq = torch.cat([y_seq, padding])
+
+            y_list.append(y_seq)
+
+        x = torch.stack(x_list)
+        y = torch.stack(y_list)
 
         return x, y
 
     def __repr__(self) -> str:
         """Return string representation of the dataset."""
-        return (f"TextDataset(length={len(self)}, tokens={len(self.tokens)}, "
-                f"block_size={self.block_size}, "
-                f"vocab_size={self.tokenizer.vocab_size})")
+        return (
+            f"TextDataset(length={len(self)}, tokens={len(self.tokens)}, "
+            f"block_size={self.block_size}, "
+            f"vocab_size={self.tokenizer.vocab_size})"
+        )
 
     def get_data_info(self) -> Dict:
-        """
-        Get information about the loaded dataset.
+        """Get comprehensive information about the loaded dataset.
 
         Returns:
             Dictionary with dataset statistics
@@ -340,11 +441,12 @@ class TextDataset:
         if self.train_data is None or self.val_data is None:
             return {"status": "No data loaded"}
 
+        total_tokens = len(self.train_data) + len(self.val_data)
+
         return {
             "vocab_size": self.vocab_size,
             "train_tokens": len(self.train_data),
             "val_tokens": len(self.val_data),
-            "total_tokens": len(self.train_data) + len(self.val_data),
-            "train_ratio": (len(self.train_data)
-                            / (len(self.train_data) + len(self.val_data)))
+            "total_tokens": total_tokens,
+            "train_ratio": len(self.train_data) / total_tokens,
         }

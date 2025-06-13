@@ -1,0 +1,10 @@
+Q: What is the main language spoken in Mexico?
+A: Spanish.
+Q: Who discovered gravity?
+A: Isaac Newton.
+Q: What is the largest lake in Africa?
+A: Lake Victoria.
+Q: What is the main ingredient in bread?
+A: Flour.
+Q: What is the capital of India?
+A: New Delhi.

@@ -1,0 +1,10 @@
+Q: What is the smallest prime number?
+A: 2.
+Q: Who is the author of 'Pride and Prejudice'?
+A: Jane Austen.
+Q: What gas do plants absorb from the atmosphere?
+A: Carbon dioxide.
+Q: What is the main language spoken in Brazil?
+A: Portuguese.
+Q: What is the currency of the United Kingdom?
+A: Pound sterling.

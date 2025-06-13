@@ -1,0 +1,5 @@
+"Did you finish the project for class?"
+"Yes, I turned it in this morning. How about you?"
+"I'm almost done. Just need to add a few more details."
+"Let me know if you want me to look it over."
+"Thanks! I appreciate the help."

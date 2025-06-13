@@ -1,20 +1,24 @@
-"""
-Configuration module for the GPT language model.
+"""Configuration module for the GPT language model.
 
 This module provides the Config class that centralizes all hyperparameters,
 system settings, and logging configuration for the model training and inference.
+
+The Config class uses dataclasses for better maintainability and type safety,
+with comprehensive validation and automatic device detection.
 """
 
 import logging
 import os
+from dataclasses import dataclass, fields
+from typing import Any, Dict, Optional
+
 import torch
-from dataclasses import dataclass
-from typing import Optional, Any, Dict
 
 
-def setup_logging(level: str = "INFO", log_file: Optional[str] = None) -> logging.Logger:
-    """
-    Set up logging configuration.
+def setup_logging(
+    level: str = "INFO", log_file: Optional[str] = None
+) -> logging.Logger:
+    """Set up logging configuration with proper error handling.
 
     Args:
         level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
@@ -26,20 +30,23 @@ def setup_logging(level: str = "INFO", log_file: Optional[str] = None) -> loggin
     Raises:
         ValueError: If level is invalid
     """
+    # Validate logging level
+    level_upper = level.upper()
+    if not hasattr(logging, level_upper):
+        raise ValueError(f"Invalid log level: {level}")
+
     # Get the root logger
     logger = logging.getLogger()
 
     # Clear existing handlers to avoid duplication
     logger.handlers.clear()
 
-    # Set level - validate it exists
-    if not hasattr(logging, level.upper()):
-        raise ValueError(f"Invalid log level: {level}")
-    logger.setLevel(getattr(logging, level.upper()))
+    # Set logging level
+    logger.setLevel(getattr(logging, level_upper))
 
     # Create formatter
     formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
 
     # Console handler
@@ -49,11 +56,14 @@ def setup_logging(level: str = "INFO", log_file: Optional[str] = None) -> loggin
 
     # File handler if specified
     if log_file:
-        # Create directory if it doesn't exist
-        os.makedirs(os.path.dirname(log_file), exist_ok=True)
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
+        try:
+            # Create directory if it doesn't exist
+            os.makedirs(os.path.dirname(log_file), exist_ok=True)
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
+        except OSError as e:
+            logger.warning(f"Failed to create file handler for {log_file}: {e}")
 
     return logger
 
@@ -63,8 +73,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Config:
-    """
-    Centralized configuration class for all model variants and training settings.
+    """Centralized configuration class for all model variants and training settings.
 
     This class uses dataclasses for better maintainability and type safety.
     All hyperparameters are documented with their purpose and typical ranges.
@@ -114,23 +123,23 @@ class Config:
 
     # Training hyperparameters
     batch_size: int = 64
-    max_iters: int = 10000
-    max_epochs: int = 10
+    max_iters: int = 100000
+    max_epochs: int = 100
     learning_rate: float = 3e-4
-    weight_decay: float = 0.01  # Centralized weight decay value
+    weight_decay: float = 0.01
     eval_interval: int = 100
     eval_iters: int = 100
     save_interval: int = 100
-    max_batches_per_epoch: int = 100  # Centralized batch limit per epoch
-    
+    max_batches_per_epoch: int = 100
+
     # Fine-tuning specific parameters
-    grad_clip: float = 1.0  # Gradient clipping threshold
-    scheduler_type: str = "cosine"  # Learning rate scheduler type
+    grad_clip: float = 1.0
+    scheduler_type: str = "cosine"
 
     # Generation parameters
-    default_max_tokens: int = 100  # Centralized default max tokens
-    default_temperature: float = 1.0  # Centralized default temperature
-    default_top_k: Optional[int] = None  # Centralized default top-k
+    default_max_tokens: int = 100
+    default_temperature: float = 1.0
+    default_top_k: Optional[int] = None
 
     # Data parameters
     vocab_size: int = 50257
@@ -141,18 +150,18 @@ class Config:
     fp16: bool = False
 
     # Logging configuration
-    log_level: str = "INFO"  # Centralized logging level
-    log_file: Optional[str] = None  # Centralized log file path
+    log_level: str = "INFO"
+    log_file: Optional[str] = None
 
     def __init__(self, **kwargs: Any) -> None:
         """Initialize Config with backward compatibility."""
-        # Handle backward compatibility for parameter names - don't modify kwargs
+        # Handle backward compatibility for parameter names
         processed_kwargs = kwargs.copy()
 
         # Apply dataclass __init__ with processed kwargs
-        self.__dataclass_init__(**processed_kwargs)
+        self._dataclass_init(**processed_kwargs)
 
-    def __dataclass_init__(self, **kwargs: Any) -> None:
+    def _dataclass_init(self, **kwargs: Any) -> None:
         """Apply dataclass initialization logic."""
         for field_name, field_obj in self.__dataclass_fields__.items():
             if field_name in kwargs:
@@ -166,89 +175,70 @@ class Config:
 
     def __post_init__(self) -> None:
         """Initialize derived and device-dependent settings."""
-        # Set device if not specified or if auto
+        self._set_device()
+        self._setup_logging()
+        self._validate_config()
+        self._set_random_seed()
+
+        logger.info(f"Config initialized with device: {self.device}")
+
+    def _set_device(self) -> None:
+        """Set device if not specified or if auto."""
         if self.device is None or self.device == "auto":
             if torch.cuda.is_available():
-                self.device = 'cuda'
-            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-                self.device = 'mps'
+                self.device = "cuda"
+            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                self.device = "mps"
             else:
-                self.device = 'cpu'
+                self.device = "cpu"
 
-        # Setup logging with centralized configuration
+    def _setup_logging(self) -> None:
+        """Setup logging with centralized configuration."""
         setup_logging(level=self.log_level, log_file=self.log_file)
 
-        # Validate configuration
-        self._validate_config()
-
-        # Set random seed for reproducibility
+    def _set_random_seed(self) -> None:
+        """Set random seed for reproducibility."""
         torch.manual_seed(self.seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed(self.seed)
             torch.cuda.manual_seed_all(self.seed)
 
-        logger.info(f"Config initialized with device: {self.device}")
-
     def _validate_config(self) -> None:
-        """Validate configuration parameters."""
+        """Validate configuration parameters with comprehensive checks."""
+        # Validation with specific error messages
         if self.vocab_size <= 0:
-            raise ValueError(f"vocab_size must be positive, got {self.vocab_size}")
-
+            raise ValueError("vocab_size must be positive")
         if self.n_embd <= 0:
-            raise ValueError(f"n_embd must be positive, got {self.n_embd}")
-
+            raise ValueError("n_embd must be positive")
         if self.n_head <= 0:
-            raise ValueError(f"n_head must be positive, got {self.n_head}")
-
+            raise ValueError("n_head must be positive")
         if self.n_layer <= 0:
-            raise ValueError(f"n_layer must be positive, got {self.n_layer}")
-
+            raise ValueError("n_layer must be positive")
         if self.block_size <= 0:
-            raise ValueError(f"block_size must be positive, got {self.block_size}")
-
+            raise ValueError("block_size must be positive")
         if self.batch_size <= 0:
-            raise ValueError(f"batch_size must be positive, got {self.batch_size}")
-
+            raise ValueError("batch_size must be positive")
         if self.max_iters <= 0:
-            raise ValueError(f"max_iters must be positive, got {self.max_iters}")
-
+            raise ValueError("max_iters must be positive")
         if self.eval_interval <= 0:
-            raise ValueError(
-                f"eval_interval must be positive, got {self.eval_interval}"
-            )
-
+            raise ValueError("eval_interval must be positive")
         if self.learning_rate <= 0:
-            raise ValueError(
-                f"learning_rate must be positive, got {self.learning_rate}"
-            )
-
+            raise ValueError("learning_rate must be positive")
         if self.weight_decay < 0:
-            raise ValueError(
-                f"weight_decay must be non-negative, got {self.weight_decay}"
-            )
-
+            raise ValueError("weight_decay must be non-negative")
         if self.max_batches_per_epoch <= 0:
-            raise ValueError(
-                f"max_batches_per_epoch must be positive, got {self.max_batches_per_epoch}"
-            )
-
+            raise ValueError("max_batches_per_epoch must be positive")
         if self.default_max_tokens <= 0:
-            raise ValueError(
-                f"default_max_tokens must be positive, got {self.default_max_tokens}"
-            )
-
+            raise ValueError("default_max_tokens must be positive")
         if self.default_temperature <= 0:
-            raise ValueError(
-                f"default_temperature must be positive, got {self.default_temperature}"
-            )
+            raise ValueError("default_temperature must be positive")
 
-        if self.n_embd % self.n_head != 0:
-            raise ValueError(
-                "n_embd must be divisible by n_head"
-            )
-
+        # Special validation cases
         if self.dropout < 0 or self.dropout > 1:
             raise ValueError("dropout must be between 0 and 1")
+
+        if self.n_embd % self.n_head != 0:
+            raise ValueError("n_embd must be divisible by n_head")
 
         # Validate log level
         if not hasattr(logging, self.log_level.upper()):
@@ -261,46 +251,52 @@ class Config:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary for serialization."""
-        from dataclasses import fields
         result = {}
         for field in fields(self):
             value = getattr(self, field.name)
             result[field.name] = value
         # Add computed properties that tests expect
-        result['head_dim'] = self.head_dim
+        result["head_dim"] = self.head_dim
         return result
 
     @classmethod
-    def from_dict(cls, config_dict: Dict[str, Any]) -> 'Config':
-        """Create config from dictionary."""
+    def from_dict(cls, config_dict: Dict[str, Any]) -> "Config":
+        """Create config from dictionary with auto-adjustment."""
         # Remove computed properties that shouldn't be passed to constructor
         config_dict = config_dict.copy()
-        config_dict.pop('head_dim', None)
+        config_dict.pop("head_dim", None)
 
-        # Handle special case where n_embd is provided but n_head isn't
-        # Ensure compatibility by adjusting n_head if needed
-        if 'n_embd' in config_dict and 'n_head' not in config_dict:
-            n_embd = config_dict['n_embd']
-            default_n_head = 6  # Default value from dataclass
-
-            # First check if default value works
-            if n_embd % default_n_head == 0:
-                config_dict['n_head'] = default_n_head
-            # Otherwise choose a compatible n_head value
-            elif n_embd == 512:
-                config_dict['n_head'] = 8  # 512 is divisible by 8
-            elif n_embd == 768:
-                config_dict['n_head'] = 12  # 768 is divisible by 12
-            elif n_embd == 1024:
-                config_dict['n_head'] = 16  # 1024 is divisible by 16
-            # For other values, try to find a good divisor
-            else:
-                for head_count in [8, 4, 12, 16]:
-                    if n_embd % head_count == 0:
-                        config_dict['n_head'] = head_count
-                        break
+        # Auto-adjust n_head if needed for compatibility
+        if "n_embd" in config_dict and "n_head" not in config_dict:
+            config_dict["n_head"] = cls._find_compatible_n_head(config_dict["n_embd"])
 
         return cls(**config_dict)
+
+    @staticmethod
+    def _find_compatible_n_head(n_embd: int) -> int:
+        """Find a compatible n_head value for the given n_embd."""
+        default_n_head = 6
+
+        # Check if default works
+        if n_embd % default_n_head == 0:
+            return default_n_head
+
+        # Common compatible values for specific embedding dimensions
+        common_configs = {
+            512: 8,
+            768: 12,
+            1024: 16,
+        }
+
+        if n_embd in common_configs:
+            return common_configs[n_embd]
+
+        # Find the best divisor
+        for head_count in [8, 4, 12, 16]:
+            if n_embd % head_count == 0:
+                return head_count
+
+        return default_n_head  # Fallback
 
     def save(self, file_path: str) -> None:
         """Save config to JSON file."""
@@ -316,6 +312,4 @@ class Config:
 
     def get_device(self) -> str:
         """Get the configured device."""
-        if self.device is None:
-            return 'cpu'
-        return self.device
+        return self.device or "cpu"

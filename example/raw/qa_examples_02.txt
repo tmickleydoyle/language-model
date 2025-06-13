@@ -1,0 +1,10 @@
+Q: What is the tallest mountain in the world?
+A: Mount Everest.
+Q: Who painted the Mona Lisa?
+A: Leonardo da Vinci.
+Q: What is the chemical symbol for gold?
+A: Au.
+Q: How many states are there in the United States?
+A: Fifty.
+Q: What is the main ingredient in bread?
+A: Flour.

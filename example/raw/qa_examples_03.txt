@@ -1,0 +1,10 @@
+Q: What is the largest mammal on Earth?
+A: The blue whale.
+Q: Who discovered penicillin?
+A: Alexander Fleming.
+Q: What is the capital city of Japan?
+A: Tokyo.
+Q: How many planets are in the Solar System?
+A: Eight.
+Q: What is the freezing point of water?
+A: 0 degrees Celsius.
