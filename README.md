@@ -1,6 +1,6 @@
 # GPT Language Model
 
-A production-quality PyTorch implementation of GPT (Generative Pre-trained Transformer) models with clean, simple interface.
+A PyTorch implementation of GPT (Generative Pre-trained Transformer) models with clean, simple interface.
 
 ## Quick Start
 
@@ -24,7 +24,7 @@ python ask.py fine_tuned_model --interactive
 ## Installation
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/tmickleydoyle/language-model.git
 cd language-model
 pip install -r requirements.txt
 ```
@@ -163,7 +163,3 @@ pytest
 - Python 3.8+
 - PyTorch 1.8+
 - See `requirements.txt` for full dependencies
-
-## License
-
-MIT License - see LICENSE file for details.
