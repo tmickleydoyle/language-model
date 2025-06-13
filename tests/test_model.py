@@ -102,9 +102,9 @@ class TestFeedForward:
 
         # Check the network structure
         layers = list(ff.net.children())
-        assert len(layers) == 4  # Linear, ReLU, Linear, Dropout
+        assert len(layers) == 4  # Linear, SiLU, Linear, Dropout
         assert isinstance(layers[0], nn.Linear)
-        assert isinstance(layers[1], nn.ReLU)
+        assert isinstance(layers[1], nn.SiLU)
         assert isinstance(layers[2], nn.Linear)
         assert isinstance(layers[3], nn.Dropout)
 
@@ -132,11 +132,11 @@ class TestFeedForward:
         ff = FeedForward(small_model_config)
         ff.eval()  # Disable dropout
 
-        # Test with zeros should remain zeros after ReLU
+        # Test with zeros should remain zeros after SiLU
         x_zeros = torch.zeros(1, 1, small_model_config.n_embd)
         output_zeros = ff(x_zeros)
 
-        # Output should be close to linear transformation of input due to ReLU
+        # Output should be close to linear transformation of input due to SiLU
         assert torch.isfinite(output_zeros).all()
 
 

@@ -59,8 +59,23 @@ def fine_tune_model(args):
     # Load tokenizer
     tokenizer_path = os.path.join(args.model, "tokenizer.json")
     if not os.path.exists(tokenizer_path):
-        print(f"❌ Error: Tokenizer not found: {tokenizer_path}")
-        sys.exit(1)
+        print(f"⚠️  Tokenizer not found at {tokenizer_path}")
+        # Try to find a tokenizer in existing model directories
+        fallback_tokenizers = [
+            "better_fine_tuned/tokenizer.json",
+            "fine_tuned_small_model/tokenizer.json"
+        ]
+        tokenizer_found = False
+        for fallback in fallback_tokenizers:
+            if os.path.exists(fallback):
+                tokenizer_path = fallback
+                print(f"✅ Using fallback tokenizer from {fallback}")
+                tokenizer_found = True
+                break
+        
+        if not tokenizer_found:
+            print(f"❌ Error: No tokenizer found. Please ensure a tokenizer.json exists.")
+            sys.exit(1)
     
     tokenizer = load_tokenizer(tokenizer_path)
     print(f"✅ Tokenizer loaded: {len(tokenizer.vocab)} tokens")
@@ -82,37 +97,84 @@ def fine_tune_model(args):
     checkpoint = torch.load(checkpoint_path, map_location='cpu')
     print(f"✅ Checkpoint loaded: {os.path.basename(checkpoint_path)}")
     
-    # Create config
+    # Create config with a larger block size for fine-tuning
     if 'config' in checkpoint:
-        # Use saved config if available
+        # Use saved config but increase block size for better Q&A training
         saved_config = checkpoint['config']
         config = Config(
             vocab_size=len(tokenizer.vocab),
             n_embd=saved_config.get('n_embd', 192),
             n_head=saved_config.get('n_head', 6),
             n_layer=saved_config.get('n_layer', 4),
-            block_size=saved_config.get('block_size', 96),
+            block_size=256,  # Increased from 96 to 256 for better Q&A training
             device='cpu'
         )
     else:
-        # Default config for older checkpoints
+        # Default config with larger block size
         config = Config(
             vocab_size=len(tokenizer.vocab),
             n_embd=192,
             n_head=6,
             n_layer=4,
-            block_size=96,
+            block_size=256,  # Increased from 96 to 256
             device='cpu'
         )
     
-    # Create model
+    # Create model with new larger block size
     model = create_model_factory(config, len(tokenizer.vocab))
     
-    # Load model state
+    # Load model state - handle potential size mismatch for block_size change
     if 'model_state_dict' in checkpoint:
-        model.load_state_dict(checkpoint['model_state_dict'])
+        state_dict = checkpoint['model_state_dict']
     else:
-        model.load_state_dict(checkpoint)
+        state_dict = checkpoint
+    
+    # Handle size mismatches when changing block_size
+    # Get old block size from saved config, default to 96 for older models
+    if 'config' in checkpoint:
+        old_block_size = checkpoint['config'].get('block_size', 96)
+    else:
+        old_block_size = 96
+    new_block_size = config.block_size
+    
+    if old_block_size != new_block_size:
+        print(f"⚠️  Adapting model from block_size {old_block_size} to {new_block_size}")
+        
+        # Fix position_ids
+        if 'position_ids' in state_dict:
+            del state_dict['position_ids']  # Will be recreated automatically
+        
+        # Fix position embeddings
+        if 'position_embedding.weight' in state_dict:
+            old_pos_emb = state_dict['position_embedding.weight']
+            new_pos_emb = torch.randn(new_block_size, old_pos_emb.shape[1]) * 0.02
+            if old_block_size < new_block_size:
+                # Copy old embeddings and pad with new ones
+                new_pos_emb[:old_block_size] = old_pos_emb
+            else:
+                # Truncate old embeddings
+                new_pos_emb = old_pos_emb[:new_block_size]
+            state_dict['position_embedding.weight'] = new_pos_emb
+        
+        # Fix causal masks for all attention blocks
+        keys_to_remove = []
+        for key in state_dict.keys():
+            if 'attention.causal_mask' in key:
+                keys_to_remove.append(key)
+        
+        for key in keys_to_remove:
+            del state_dict[key]  # Will be recreated automatically
+    
+    # Load the modified state dict
+    try:
+        missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+        if missing_keys:
+            print(f"✅ Model loaded. Missing keys (will use default initialization): {len(missing_keys)}")
+        if unexpected_keys:
+            print(f"⚠️  Unexpected keys ignored: {len(unexpected_keys)}")
+    except Exception as e:
+        print(f"❌ Error loading model: {e}")
+        sys.exit(1)
     
     param_count = sum(p.numel() for p in model.parameters())
     print(f"✅ Model loaded: {param_count:,} parameters")
@@ -131,8 +193,15 @@ def fine_tune_model(args):
     
     print(f"✅ Loaded {len(qa_pairs)} Q&A pairs")
     
-    # Create fine-tuning dataset
-    dataset = InstructionDataset(args.data, tokenizer, config.block_size)
+    # Create fine-tuning dataset with default Alpaca template
+    dataset = InstructionDataset(
+        args.data, 
+        tokenizer, 
+        config.block_size
+        # Using default templates:
+        # instruction_template="### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:\n"
+        # response_template="{output}"
+    )
     print(f"✅ Dataset: {len(dataset)} samples")
     
     # Create output directory
@@ -142,10 +211,19 @@ def fine_tune_model(args):
     print("🚀 Starting fine-tuning...")
     start_time = time.time()
     
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
+    # Use more conservative fine-tuning settings
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=0.01)
+    
+    # Add learning rate scheduler (cosine annealing like base training)
+    from torch.optim.lr_scheduler import CosineAnnealingLR
+    scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs)
     
     model.train()
     total_loss = 0
+    
+    # Calculate effective batch size for better reporting
+    effective_batches_per_epoch = max(1, len(dataset) // args.batch_size)
+    print(f"📊 Training with {effective_batches_per_epoch} batches per epoch (batch_size={args.batch_size})")
     
     for epoch in range(args.epochs):
         epoch_loss = 0
@@ -159,37 +237,50 @@ def fine_tune_model(args):
             if not batch_data:
                 continue
             
-            # Prepare batch
-            max_len = max(len(item['input_ids']) for item in batch_data)
-            input_ids = []
-            targets = []
+            # Prepare batch using the dataset's collate function
+            batch = dataset.collate_fn(batch_data)
             
-            for item in batch_data:
-                ids = item['input_ids']
-                # Convert tensor to list if needed and pad to max length
-                if isinstance(ids, torch.Tensor):
-                    ids = ids.tolist()
-                padded = ids + [0] * (max_len - len(ids))
-                input_ids.append(padded[:config.block_size])
-                targets.append(padded[:config.block_size])
-            
-            input_ids = torch.tensor(input_ids, dtype=torch.long)
-            targets = torch.tensor(targets, dtype=torch.long)
+            input_ids = batch['input_ids'][:, :config.block_size]
+            target_ids = batch['target_ids'][:, :config.block_size]
+            labels_mask = batch['labels_mask'][:, :config.block_size]
             
             # Forward pass
-            logits, loss = model(input_ids, targets)
+            logits, _ = model(input_ids, target_ids)
+            
+            # Calculate loss only on response tokens (using labels_mask)
+            # Reshape for loss calculation
+            logits_flat = logits.view(-1, logits.size(-1))
+            targets_flat = target_ids.view(-1)
+            mask_flat = labels_mask.view(-1).bool()
+            
+            # Only calculate loss on masked (response) tokens
+            if mask_flat.sum() > 0:
+                loss = F.cross_entropy(
+                    logits_flat[mask_flat], 
+                    targets_flat[mask_flat]
+                )
+            else:
+                loss = torch.tensor(0.0, requires_grad=True)
             
             # Backward pass
             optimizer.zero_grad()
             loss.backward()
+            
+            # Gradient clipping (like base training)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            
             optimizer.step()
             
             epoch_loss += loss.item()
             num_batches += 1
         
+        # Update learning rate
+        scheduler.step()
+        
         avg_loss = epoch_loss / max(num_batches, 1)
         total_loss += avg_loss
-        print(f"Epoch {epoch + 1}/{args.epochs}: Loss = {avg_loss:.4f}")
+        current_lr = scheduler.get_last_lr()[0]
+        print(f"Epoch {epoch + 1}/{args.epochs}: Loss = {avg_loss:.4f}, LR = {current_lr:.6f}")
     
     final_loss = total_loss / args.epochs
     training_time = time.time() - start_time
@@ -214,7 +305,27 @@ def fine_tune_model(args):
     
     # Copy tokenizer
     import shutil
-    shutil.copy(tokenizer_path, os.path.join(args.output, "tokenizer.json"))
+    try:
+        shutil.copy(tokenizer_path, os.path.join(args.output, "tokenizer.json"))
+        print(f"✅ Tokenizer copied to output directory")
+    except FileNotFoundError:
+        print(f"⚠️  Warning: Tokenizer not found at {tokenizer_path}")
+        # Try to find a tokenizer in existing model directories
+        fallback_tokenizers = [
+            "better_fine_tuned/tokenizer.json",
+            "fine_tuned_small_model/tokenizer.json"
+        ]
+        tokenizer_copied = False
+        for fallback in fallback_tokenizers:
+            if os.path.exists(fallback):
+                shutil.copy(fallback, os.path.join(args.output, "tokenizer.json"))
+                print(f"✅ Using fallback tokenizer from {fallback}")
+                tokenizer_copied = True
+                break
+        
+        if not tokenizer_copied:
+            print(f"❌ Error: No tokenizer available. Please ensure a tokenizer.json exists in the model directory.")
+            sys.exit(1)
     
     print(f"💾 Fine-tuned model saved to: {args.output}")
     
@@ -225,9 +336,13 @@ def fine_tune_model(args):
     test_questions = ["Who is Beau?", "Where does the story take place?"]
     
     for question in test_questions:
-        prompt = f"Q: {question}\nA:"
+        # Use Alpaca format with instruction/input structure
+        prompt = f"### Instruction:\nAnswer the following question about the story.\n\n### Input:\n{question}\n\n### Response:\n"
         tokens = tokenizer.encode(prompt)
         input_ids = torch.tensor([tokens], dtype=torch.long)
+        
+        # Track generated tokens separately
+        generated_tokens = []
         
         with torch.no_grad():
             for _ in range(50):
@@ -238,18 +353,27 @@ def fine_tune_model(args):
                 logits = logits[0, -1, :] / 0.8
                 probs = F.softmax(logits, dim=-1)
                 next_token = torch.multinomial(probs, 1).item()
+                generated_tokens.append(next_token)
                 input_ids = torch.cat([input_ids, torch.tensor([[next_token]])], dim=1)
                 
-                if tokenizer.decode([next_token]) in ['\n', '?']:
+                # Stop at natural breaking points
+                decoded_token = tokenizer.decode([next_token])
+                if decoded_token in ['.', '!', '?'] and len(generated_tokens) > 3:
+                    break
+                elif decoded_token == '\n' and len(generated_tokens) > 5:
                     break
         
-        response = tokenizer.decode(input_ids[0].tolist())
-        if "A:" in response:
-            answer = response.split("A:")[-1].strip()
-            if '\n' in answer:
-                answer = answer.split('\n')[0].strip()
+        # Decode only the generated part
+        if generated_tokens:
+            response = tokenizer.decode(generated_tokens).strip()
+            # Clean up any formatting artifacts
+            if '\n' in response:
+                response = response.split('\n')[0].strip()
             print(f"Q: {question}")
-            print(f"A: {answer}")
+            print(f"A: {response}")
+        else:
+            print(f"Q: {question}")
+            print(f"A: [No response generated]")
 
 def main():
     parser = argparse.ArgumentParser(description="Fine-tune a trained GPT model")
@@ -260,9 +384,9 @@ def main():
     parser.add_argument("-o", "--output", default="fine_tuned_model", help="Output directory (default: fine_tuned_model)")
     
     # Fine-tuning parameters
-    parser.add_argument("--epochs", type=int, default=8, help="Number of fine-tuning epochs (default: 8)")
+    parser.add_argument("--epochs", type=int, default=20, help="Number of fine-tuning epochs (default: 20)")
     parser.add_argument("--batch-size", type=int, default=4, help="Batch size (default: 4)")
-    parser.add_argument("--learning-rate", type=float, default=1e-5, help="Learning rate (default: 1e-5)")
+    parser.add_argument("--learning-rate", type=float, default=5e-5, help="Learning rate (default: 5e-5)")
     
     args = parser.parse_args()
     

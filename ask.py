@@ -45,23 +45,31 @@ def load_tokenizer(tokenizer_path):
     
     return tokenizer
 
-def generate_response(model, tokenizer, config, prompt, max_tokens=100, temperature=0.7):
+def generate_response(model, tokenizer, config, prompt, max_tokens=100, temperature=0.7, debug=False):
     """Generate a response to the prompt."""
     model.eval()
     
     # Tokenize prompt
     tokens = tokenizer.encode(prompt)
     
+    if debug:
+        print(f"🔍 Debug - Original prompt: '{prompt}'")
+        print(f"🔍 Debug - Prompt tokens: {len(tokens)} tokens")
+        print(f"🔍 Debug - Decoded tokens: '{tokenizer.decode(tokens)}'")
+    
     # Ensure we don't exceed context window
     max_prompt_length = config.block_size - max_tokens
     if len(tokens) > max_prompt_length:
         tokens = tokens[-max_prompt_length:]
+        if debug:
+            print(f"🔍 Debug - Truncated to {len(tokens)} tokens")
     
     input_ids = torch.tensor([tokens], dtype=torch.long)
     
     # Generate
+    generated_tokens = []
     with torch.no_grad():
-        for _ in range(max_tokens):
+        for step in range(max_tokens):
             if input_ids.shape[1] >= config.block_size:
                 break
                 
@@ -70,23 +78,47 @@ def generate_response(model, tokenizer, config, prompt, max_tokens=100, temperat
             probs = F.softmax(logits, dim=-1)
             
             # Sample next token
-            next_token = torch.multinomial(probs, 1).item()
+            if temperature < 0.1:
+                # Greedy sampling for very low temperature
+                next_token = torch.argmax(logits).item()
+            else:
+                next_token = torch.multinomial(probs, 1).item()
+            
+            generated_tokens.append(next_token)
             input_ids = torch.cat([input_ids, torch.tensor([[next_token]])], dim=1)
             
             # Stop at natural breaking points
             decoded_token = tokenizer.decode([next_token])
-            if decoded_token in ['.', '!', '?', '\n'] and input_ids.shape[1] > len(tokens) + 20:
+            
+            if debug and step < 10:  # Debug first 10 tokens
+                print(f"🔍 Step {step}: token={next_token}, decoded='{decoded_token}'")
+            
+            # For Alpaca format, stop at natural sentence breaks
+            if decoded_token in ['.', '!', '?'] and len(generated_tokens) > 3:
+                break
+            elif decoded_token == '\n' and len(generated_tokens) > 5:
+                break
+            # Stop if we hit another instruction marker (next question)
+            elif '###' in decoded_token and len(generated_tokens) > 5:
                 break
     
-    # Decode full text
-    generated_text = tokenizer.decode(input_ids[0].tolist())
+    # Decode only the generated part
+    if generated_tokens:
+        response = tokenizer.decode(generated_tokens).strip()
+        
+        if debug:
+            print(f"🔍 Debug - Generated tokens: {generated_tokens[:10]}...")
+            print(f"🔍 Debug - Raw response: '{response}'")
+        
+        # Clean up the response
+        # Remove any trailing instruction markers
+        for end_marker in ['###', '\n\n']:
+            if end_marker in response:
+                response = response.split(end_marker)[0].strip()
+        
+        return response
     
-    # Extract only the generated part
-    original_text = tokenizer.decode(tokens)
-    if len(generated_text) > len(original_text):
-        return generated_text[len(original_text):].strip()
-    
-    return generated_text
+    return ""
 
 def load_model(model_dir):
     """Load model and tokenizer from directory."""
@@ -203,24 +235,32 @@ def interactive_mode(model, tokenizer, config):
                     print("❌ Invalid temperature format")
                 continue
             
+            if prompt.startswith('debug:'):
+                debug_mode = prompt[6:].strip().lower() in ['on', 'true', '1']
+                print(f"✅ Debug mode {'enabled' if debug_mode else 'disabled'}")
+                continue
+            
             # Process prompt
-            if prompt.startswith('q:'):
-                # Question format
+            if prompt.startswith('q:') or prompt.startswith('q '):
+                # Question format - use Alpaca template format with the same instruction from training data
                 question = prompt[2:].strip()
-                full_prompt = f"Q: {question}\nA:"
-                max_tokens = 50
+                full_prompt = f"### Instruction:\nYou are knowledgeable about the story of Beau, a puppy living in New Orleans with his owner Madame Delphine. You can help answer questions about Beau's adventures, the characters in his story, and the places they visit in the French Quarter and beyond.\n\n### Input:\n{question}\n\n### Response:\n"
+                max_tokens = 50  
+                debug_mode = True  
                 print(f"🤖 Answering question...")
             else:
                 # Story mode (remove 'story:' prefix if present)
                 if prompt.startswith('story:'):
                     prompt = prompt[6:].strip()
-                full_prompt = prompt
+                # Use simple story continuation format
+                full_prompt = f"{prompt}"
                 max_tokens = 80
+                debug_mode = False
                 print(f"🤖 Generating story...")
             
             # Generate response
             try:
-                response = generate_response(model, tokenizer, config, full_prompt, max_tokens, temperature)
+                response = generate_response(model, tokenizer, config, full_prompt, max_tokens, temperature, debug=debug_mode)
                 print(f"📝 {response}")
             except Exception as e:
                 print(f"❌ Generation error: {e}")
@@ -238,10 +278,12 @@ def batch_questions(model, tokenizer, config, questions, temperature=0.7):
     
     for i, question in enumerate(questions, 1):
         print(f"\nQ{i}: {question}")
-        prompt = f"Q: {question}\nA:"
+        
+        # Use the exact instruction from training data
+        prompt = f"### Instruction:\nYou are knowledgeable about the story of Beau, a puppy living in New Orleans with his owner Madame Delphine. You can help answer questions about Beau's adventures, the characters in his story, and the places they visit in the French Quarter and beyond.\n\n### Input:\n{question}\n\n### Response:\n"
         
         try:
-            response = generate_response(model, tokenizer, config, prompt, max_tokens=50, temperature=temperature)
+            response = generate_response(model, tokenizer, config, prompt, max_tokens=50, temperature=temperature, debug=True)
             print(f"A{i}: {response}")
         except Exception as e:
             print(f"A{i}: ❌ Error: {e}")

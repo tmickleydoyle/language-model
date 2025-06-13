@@ -86,12 +86,12 @@ class TestUtils:
 
     def test_validate_file_exists_directory(self, temp_dir):
         """Test validate_file_exists with directory instead of file."""
-        with pytest.raises(FileNotFoundError, match="Test dir not found"):
+        with pytest.raises(FileNotFoundError, match="Test dir is a directory, not a file"):
             validate_file_exists(temp_dir, "Test dir")
 
     def test_validate_file_exists_none_path(self):
         """Test validate_file_exists with None path."""
-        with pytest.raises(FileNotFoundError, match="Test file not found"):
+        with pytest.raises(ValueError, match="Test file path cannot be None"):
             validate_file_exists(None, "Test file")
 
     def test_count_parameters_simple_model(self):

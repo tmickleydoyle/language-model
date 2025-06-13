@@ -32,10 +32,32 @@ def train_model(args):
     print("=" * 30)
     
     # Read training data
-    print(f"📖 Reading data from {args.data}")
-    with open(args.data, 'r', encoding='utf-8') as f:
-        text = f.read()
-    print(f"✅ Loaded {len(text):,} characters")
+    if os.path.isfile(args.data):
+        print(f"📖 Reading data from file {args.data}")
+        with open(args.data, 'r', encoding='utf-8') as f:
+            text = f.read()
+        print(f"✅ Loaded {len(text):,} characters from single file")
+    elif os.path.isdir(args.data):
+        print(f"📖 Reading data from directory {args.data}")
+        text = ""
+        txt_files = sorted([f for f in os.listdir(args.data) if f.endswith('.txt')])
+        
+        if not txt_files:
+            print(f"❌ Error: No .txt files found in directory: {args.data}")
+            sys.exit(1)
+        
+        print(f"📚 Found {len(txt_files)} text files:")
+        for txt_file in txt_files:
+            file_path = os.path.join(args.data, txt_file)
+            with open(file_path, 'r', encoding='utf-8') as f:
+                file_content = f.read()
+                text += file_content + "\n\n"  # Add spacing between files
+                print(f"  ✅ {txt_file}: {len(file_content):,} characters")
+        
+        print(f"✅ Loaded {len(text):,} total characters from {len(txt_files)} files")
+    else:
+        print(f"❌ Error: Data path not found: {args.data}")
+        sys.exit(1)
     
     # Create save directory
     os.makedirs(args.output, exist_ok=True)
@@ -67,9 +89,11 @@ def train_model(args):
         n_layer=args.num_layers,
         block_size=args.context_size,
         max_iters=args.iterations,
+        max_epochs=None,
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
-        device='cpu'
+        device='cpu',
+        save_interval=100
     )
     
     print(f"🏗️ Model: {config.n_layer}L-{config.n_embd}D-{config.n_head}H")
@@ -79,15 +103,26 @@ def train_model(args):
     param_count = sum(p.numel() for p in model.parameters())
     print(f"✅ Model created: {param_count:,} parameters")
     
-    # Create dataset
-    dataset = TextDataset(text=text, tokenizer=tokenizer, block_size=config.block_size)
-    print(f"✅ Dataset: {len(dataset)} samples")
+    # Create datasets with train/validation split
+    print("🔄 Creating train/validation split...")
+    
+    # Split text into train (90%) and validation (10%)
+    split_idx = int(len(text) * 0.9)
+    train_text = text[:split_idx]
+    val_text = text[split_idx:]
+    
+    train_dataset = TextDataset(text=train_text, tokenizer=tokenizer, block_size=config.block_size)
+    val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, block_size=config.block_size)
+    
+    print(f"✅ Train dataset: {len(train_dataset)} samples")
+    print(f"✅ Val dataset: {len(val_dataset)} samples")
     
     # Create trainer
     trainer = Trainer(
         model=model,
         config=config,
-        train_dataset=dataset,
+        train_dataset=train_dataset,
+        val_dataset=val_dataset,
         save_dir=args.output
     )
     
@@ -110,7 +145,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train a production GPT model")
     
     # Required arguments
-    parser.add_argument("data", help="Path to training text file")
+    parser.add_argument("data", help="Path to training text file or directory containing .txt files")
     parser.add_argument("-o", "--output", default="model", help="Output directory (default: model)")
     
     # Model architecture
@@ -118,7 +153,7 @@ def main():
     parser.add_argument("--embedding-dim", type=int, default=192, help="Embedding dimension (default: 192)")
     parser.add_argument("--num-heads", type=int, default=6, help="Number of attention heads (default: 6)")
     parser.add_argument("--num-layers", type=int, default=4, help="Number of transformer layers (default: 4)")
-    parser.add_argument("--context-size", type=int, default=96, help="Context window size (default: 96)")
+    parser.add_argument("--context-size", type=int, default=256, help="Context window size (default: 256)")
     
     # Training parameters
     parser.add_argument("--iterations", type=int, default=300, help="Training iterations (default: 300)")
@@ -128,7 +163,7 @@ def main():
     args = parser.parse_args()
     
     if not os.path.exists(args.data):
-        print(f"❌ Error: Data file not found: {args.data}")
+        print(f"❌ Error: Data path not found: {args.data}")
         sys.exit(1)
     
     train_model(args)

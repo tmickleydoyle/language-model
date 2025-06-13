@@ -30,7 +30,7 @@ def create_model_factory(config, vocab_size):
     """
     # Update config with vocab_size
     config.vocab_size = vocab_size
-    
+
     model = GPTLanguageModel(config)
     model = model.to(config.device)
     return model
