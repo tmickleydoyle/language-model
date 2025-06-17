@@ -72,7 +72,7 @@ python train.py example/raw/example.txt \
 ```
 
 **Options:**
-- `--vocab-size`: Vocabulary size (default: 1500)
+- `--vocab-size`: Vocabulary size (default: 8000)
 - `--embedding-dim`: Embedding dimension (default: 192)
 - `--num-heads`: Number of attention heads (default: 6)
 - `--num-layers`: Number of layers (default: 4)

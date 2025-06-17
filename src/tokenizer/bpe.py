@@ -101,7 +101,7 @@ class BPETokenizer:
     def train(
         self,
         text: str,
-        max_vocab_size: int = 1000,
+        max_vocab_size: int = 100000,
         verbose: bool = False,
         min_frequency: int = 2,
     ) -> None:

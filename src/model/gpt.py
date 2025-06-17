@@ -53,6 +53,7 @@ class MultiHeadAttention(nn.Module):
 
         # Output projection
         self.proj = nn.Linear(config.n_embd, config.n_embd)
+        self.proj._is_residual_projection = True  # Mark for special initialization
 
         # Dropout layers
         self.dropout = nn.Dropout(config.dropout)
@@ -82,8 +83,9 @@ class MultiHeadAttention(nn.Module):
         """
         batch_size, seq_len, embed_dim = x.shape
 
-        # Use mixed precision if enabled
-        with torch.amp.autocast("cuda", enabled=self.config.fp16):
+        # Use mixed precision if enabled (only on CUDA)
+        device_type = "cuda" if x.device.type == "cuda" else "cpu"
+        with torch.amp.autocast(device_type, enabled=self.config.fp16 and x.device.type == "cuda"):
             # Compute and split Q, K, V in one pass
             qkv_output = self._compute_qkv(x, batch_size, seq_len)
             q, k, v = self._split_qkv(qkv_output)
@@ -166,6 +168,9 @@ class FeedForward(nn.Module):
             nn.Linear(hidden_dim, config.n_embd),
             nn.Dropout(config.dropout),
         )
+        
+        # Mark the second linear layer as residual projection for better initialization
+        self.net[2]._is_residual_projection = True
 
     def _calculate_hidden_dim(self, n_embd: int) -> int:
         """Calculate hidden dimension (typically 4x embedding dimension)."""
@@ -257,6 +262,7 @@ class GPTLanguageModel(nn.Module):
         self._initialize_embeddings()
         self._initialize_transformer_blocks()
         self._initialize_output_layers()
+        self._tie_weights()  # Add weight tying
         self._initialize_weights()
 
         logger.info(
@@ -287,20 +293,35 @@ class GPTLanguageModel(nn.Module):
     def _initialize_output_layers(self) -> None:
         """Initialize final layer norm and language modeling head."""
         self.ln_f = nn.LayerNorm(self.config.n_embd)
-        self.lm_head = nn.Linear(self.config.n_embd, self.vocab_size)
+        self.lm_head = nn.Linear(self.config.n_embd, self.vocab_size, bias=False)
+
+    def _tie_weights(self) -> None:
+        """Tie weights between token embedding and language modeling head.
+        
+        This reduces the number of parameters and often improves performance.
+        """
+        self.lm_head.weight = self.token_embedding.weight
 
     def _initialize_weights(self) -> None:
         """Initialize weights using normal distribution."""
         self.apply(self._init_weights)
 
     def _init_weights(self, module: nn.Module) -> None:
-        """Initialize weights using normal distribution."""
+        """Initialize weights using improved initialization for language modeling."""
         if isinstance(module, nn.Linear):
-            nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            # Use slightly smaller std for better initialization
+            std = 0.02
+            # Scale down the residual projections
+            if hasattr(module, '_is_residual_projection'):
+                std = 0.02 / (2 * self.config.n_layer) ** 0.5
+            nn.init.normal_(module.weight, mean=0.0, std=std)
             if module.bias is not None:
                 nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):
             nn.init.normal_(module.weight, mean=0.0, std=0.02)
+        elif isinstance(module, nn.LayerNorm):
+            nn.init.zeros_(module.bias)
+            nn.init.ones_(module.weight)
 
     def _count_parameters(self) -> int:
         """Count trainable parameters."""
@@ -354,7 +375,8 @@ class GPTLanguageModel(nn.Module):
 
     def _apply_transformer_blocks(self, x: torch.Tensor) -> torch.Tensor:
         """Apply transformer blocks and final processing."""
-        with torch.amp.autocast("cuda", enabled=self.config.fp16):
+        device_type = "cuda" if x.device.type == "cuda" else "cpu"
+        with torch.amp.autocast(device_type, enabled=self.config.fp16 and x.device.type == "cuda"):
             for block in self.blocks:
                 x = block(x)
 
@@ -468,6 +490,44 @@ class GPTLanguageModel(nn.Module):
 
         param_counts["total"] = total_params
         return param_counts
+
+    def configure_optimizers(self, learning_rate: float, weight_decay: float, device_type: str):
+        """Configure optimizers with different learning rates for different parameter groups.
+        
+        Args:
+            learning_rate: Base learning rate
+            weight_decay: Weight decay for regularization
+            device_type: Device type for optimizer selection
+            
+        Returns:
+            Configured optimizer
+        """
+        # Separate parameters into decay and no-decay groups
+        decay_params = []
+        no_decay_params = []
+        
+        for name, param in self.named_parameters():
+            if param.requires_grad:
+                if len(param.shape) >= 2:  # Weight matrices
+                    decay_params.append(param)
+                else:  # Biases and layer norm parameters
+                    no_decay_params.append(param)
+        
+        # Create parameter groups
+        optimizer_grouped_parameters = [
+            {"params": decay_params, "weight_decay": weight_decay},
+            {"params": no_decay_params, "weight_decay": 0.0}
+        ]
+        
+        # Use AdamW for better performance
+        optimizer = torch.optim.AdamW(
+            optimizer_grouped_parameters, 
+            lr=learning_rate,
+            betas=(0.9, 0.95),  # Better betas for language modeling
+            eps=1e-8
+        )
+        
+        return optimizer
 
 
 def create_model(config: Any, vocab_size: int) -> GPTLanguageModel:

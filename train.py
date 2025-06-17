@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-🚀 TRAIN - Production GPT Model Training
-========================================
-Train a production-quality GPT language model
+🚀 OPTIMIZED TRAIN - Fast GPT Model Training with Overfitting Prevention
+======================================================================
+Train a GPT language model optimized for preventing overfitting and fast training
 """
 
 import sys
@@ -26,12 +26,23 @@ except Exception as e:
     print(f"❌ Import error: {e}")
     sys.exit(1)
 
-def train_model(args):
-    """Train the production model."""
-    print("🚀 PRODUCTION GPT TRAINING")
-    print("=" * 30)
+def train_model_optimized(args):
+    """Train the model with optimizations to prevent overfitting."""
+    print("🚀 OPTIMIZED GPT TRAINING")
+    print("=" * 35)
     
-    # Read training data
+    # Detect best available device
+    if torch.cuda.is_available():
+        device = "cuda"
+        print(f"🔥 Using GPU: {torch.cuda.get_device_name()}")
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        device = "mps"
+        print("🍎 Using Apple Metal Performance Shaders")
+    else:
+        device = "cpu"
+        print("💻 Using CPU")
+    
+    # Read training data (same as original)
     if os.path.isfile(args.data):
         print(f"📖 Reading data from file {args.data}")
         with open(args.data, 'r', encoding='utf-8') as f:
@@ -51,7 +62,7 @@ def train_model(args):
             file_path = os.path.join(args.data, txt_file)
             with open(file_path, 'r', encoding='utf-8') as f:
                 file_content = f.read()
-                text += file_content + "\n\n"  # Add spacing between files
+                text += file_content + "\n\n"
                 print(f"  ✅ {txt_file}: {len(file_content):,} characters")
         
         print(f"✅ Loaded {len(text):,} total characters from {len(txt_files)} files")
@@ -62,10 +73,12 @@ def train_model(args):
     # Create save directory
     os.makedirs(args.output, exist_ok=True)
     
-    # Build tokenizer
-    print("🔤 Building tokenizer...")
+    # Build tokenizer with optimized vocab size for semantic understanding
+    print("🔤 Building optimized tokenizer...")
     tokenizer = BPETokenizer()
-    tokenizer.train(text, max_vocab_size=args.vocab_size)
+    # Use full vocab size to ensure proper word-level tokenization
+    effective_vocab_size = args.vocab_size
+    tokenizer.train(text, max_vocab_size=effective_vocab_size)
     vocab_size = len(tokenizer.vocab)
     print(f"✅ Tokenizer built: {vocab_size} tokens")
     
@@ -81,33 +94,38 @@ def train_model(args):
         }, f, indent=2)
     print(f"✅ Tokenizer saved: {tokenizer_path}")
     
-    # Create config
+    # Create optimized config to prevent overfitting
     config = Config(
         vocab_size=vocab_size,
         n_embd=args.embedding_dim,
         n_head=args.num_heads,
         n_layer=args.num_layers,
         block_size=args.context_size,
-        max_iters=args.iterations,
-        max_epochs=None,
+        max_epochs=args.epochs,
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
-        device='cpu',
-        save_interval=100
+        device=device,
+        save_interval=args.save_interval,
+        eval_interval=args.eval_interval,
+        dropout=args.dropout,  # Higher dropout to prevent overfitting
+        weight_decay=args.weight_decay,  # L2 regularization
+        grad_clip=1.0,  # Gradient clipping
+        fp16=args.mixed_precision and device != "cpu",  # Mixed precision for speed
     )
     
-    print(f"🏗️ Model: {config.n_layer}L-{config.n_embd}D-{config.n_head}H")
+    print(f"🏗️ Model: {config.n_layer}L-{config.n_embd}D-{config.n_head}H on {device}")
+    print(f"⚙️ Training: dropout={config.dropout}, weight_decay={config.weight_decay}")
     
     # Create model
     model = create_model_factory(config, vocab_size)
     param_count = sum(p.numel() for p in model.parameters())
     print(f"✅ Model created: {param_count:,} parameters")
     
-    # Create datasets with train/validation split
+    # Create datasets with better validation split (80/20 instead of 90/10)
     print("🔄 Creating train/validation split...")
     
-    # Split text into train (90%) and validation (10%)
-    split_idx = int(len(text) * 0.9)
+    # Use 80/20 split for better validation
+    split_idx = int(len(text) * 0.8)
     train_text = text[:split_idx]
     val_text = text[split_idx:]
     
@@ -126,39 +144,102 @@ def train_model(args):
         save_dir=args.output
     )
     
-    # Train
-    print("🏃 Starting training...")
+    # Implement early stopping
+    early_stop_patience = args.early_stopping_patience
+    early_stop_counter = 0
+    best_val_loss = float('inf')
+    
+    print(f"🏃 Starting optimized training with early stopping (patience={early_stop_patience})...")
+    print(f"🛡️ Overfitting prevention: dropout={args.dropout}, weight_decay={args.weight_decay}")
     start_time = time.time()
-    trainer.train()
+    
+    try:
+        # Enhanced training loop with monitoring
+        epoch = 0
+        training_interrupted = False
+        
+        for epoch in range(config.max_epochs):
+            # Train one epoch
+            epoch_start = time.time()
+            avg_train_loss = trainer.train_epoch()
+            
+            # Evaluate
+            eval_results = trainer.evaluate()
+            val_loss = eval_results if isinstance(eval_results, float) else eval_results.get('val_loss', float('inf'))
+            
+            epoch_time = time.time() - epoch_start
+            total_time = time.time() - start_time
+            
+            # Early stopping check
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                early_stop_counter = 0
+                # Save best model
+                trainer.save_checkpoint(Path(args.output) / "best_model.pth")
+                print(f"📈 Epoch {epoch+1:3d} | Train: {avg_train_loss:.4f} | Val: {val_loss:.4f} | Best! | Time: {epoch_time:.1f}s | Total: {total_time:.1f}s")
+            else:
+                early_stop_counter += 1
+                print(f"📊 Epoch {epoch+1:3d} | Train: {avg_train_loss:.4f} | Val: {val_loss:.4f} | Patience: {early_stop_counter}/{early_stop_patience} | Time: {epoch_time:.1f}s | Total: {total_time:.1f}s")
+                
+                if early_stop_counter >= early_stop_patience:
+                    print(f"🛑 Early stopping triggered! No improvement for {early_stop_patience} epochs")
+                    print(f"🎯 Best validation loss: {best_val_loss:.4f}")
+                    break
+            
+            # Regular checkpoint saving
+            if (epoch + 1) % config.save_interval == 0:
+                trainer.save_checkpoint()
+                
+    except KeyboardInterrupt:
+        print(f"\n🛑 Training interrupted by user at epoch {epoch+1}")
+        training_interrupted = True
+    
     training_time = time.time() - start_time
     
-    print(f"✅ Training complete in {training_time:.1f}s")
-    print(f"💾 Model saved to: {args.output}")
+    if not training_interrupted:
+        print(f"✅ Training completed in {training_time:.1f}s after {epoch+1} epochs")
+    else:
+        print(f"⏹️ Training stopped in {training_time:.1f}s after {epoch+1} epochs")
     
-    # Test generation
+    print(f"💾 Model saved to: {args.output}")
+    print(f"🎯 Best validation loss: {best_val_loss:.4f}")
+    
+    # Test generation with better parameters
     print("\n🧪 Testing generation...")
     test_prompt = "Delphine and Beau"
-    generated = trainer.generate_text(test_prompt, tokenizer, max_tokens=50, temperature=0.7)
+    generated = trainer.generate_text(test_prompt, tokenizer, max_tokens=50, temperature=0.8)
     print(f"📝 Test: {generated}")
+    
+    return best_val_loss
 
 def main():
-    parser = argparse.ArgumentParser(description="Train a production GPT model")
+    parser = argparse.ArgumentParser(description="Train an optimized GPT model with overfitting prevention")
     
     # Required arguments
     parser.add_argument("data", help="Path to training text file or directory containing .txt files")
-    parser.add_argument("-o", "--output", default="model", help="Output directory (default: model)")
+    parser.add_argument("-o", "--output", default="optimized_model", help="Output directory (default: optimized_model)")
     
-    # Model architecture
-    parser.add_argument("--vocab-size", type=int, default=1500, help="Vocabulary size (default: 1500)")
-    parser.add_argument("--embedding-dim", type=int, default=192, help="Embedding dimension (default: 192)")
-    parser.add_argument("--num-heads", type=int, default=6, help="Number of attention heads (default: 6)")
-    parser.add_argument("--num-layers", type=int, default=4, help="Number of transformer layers (default: 4)")
-    parser.add_argument("--context-size", type=int, default=256, help="Context window size (default: 256)")
+    # Model architecture - defaults optimized for semantic understanding
+    parser.add_argument("--vocab-size", type=int, default=8000, help="Max vocabulary size (default: 8000)")
+    parser.add_argument("--embedding-dim", type=int, default=128, help="Embedding dimension (default: 128)")
+    parser.add_argument("--num-heads", type=int, default=4, help="Number of attention heads (default: 4)")
+    parser.add_argument("--num-layers", type=int, default=3, help="Number of transformer layers (default: 3)")
+    parser.add_argument("--context-size", type=int, default=128, help="Context window size (default: 128)")
     
-    # Training parameters
-    parser.add_argument("--iterations", type=int, default=300, help="Training iterations (default: 300)")
-    parser.add_argument("--batch-size", type=int, default=32, help="Batch size (default: 32)")
-    parser.add_argument("--learning-rate", type=float, default=3e-4, help="Learning rate (default: 3e-4)")
+    # Training parameters - optimized for stability
+    parser.add_argument("--epochs", type=int, default=50, help="Maximum training epochs (default: 50)")
+    parser.add_argument("--batch-size", type=int, default=16, help="Batch size (default: 16)")
+    parser.add_argument("--learning-rate", type=float, default=5e-4, help="Learning rate (default: 5e-4)")
+    
+    # Regularization parameters - prevent overfitting
+    parser.add_argument("--dropout", type=float, default=0.3, help="Dropout rate (default: 0.3)")
+    parser.add_argument("--weight-decay", type=float, default=0.01, help="Weight decay (default: 0.01)")
+    parser.add_argument("--early-stopping-patience", type=int, default=8, help="Early stopping patience (default: 8)")
+    
+    # Performance parameters
+    parser.add_argument("--eval-interval", type=int, default=1, help="Evaluation interval in epochs (default: 1)")
+    parser.add_argument("--save-interval", type=int, default=10, help="Save checkpoint interval in epochs (default: 10)")
+    parser.add_argument("--mixed-precision", action="store_true", help="Use mixed precision training for speed")
     
     args = parser.parse_args()
     
@@ -166,8 +247,16 @@ def main():
         print(f"❌ Error: Data path not found: {args.data}")
         sys.exit(1)
     
-    train_model(args)
-    print("\n🎉 Training completed successfully!")
+    print(f"🎯 Training with regularization: dropout={args.dropout}, weight_decay={args.weight_decay}")
+    print(f"⏰ Early stopping patience: {args.early_stopping_patience} epochs")
+    
+    best_val_loss = train_model_optimized(args)
+    
+    if best_val_loss < 5.0:  # Reasonable threshold
+        print("\n🎉 Training completed successfully with good validation loss!")
+    else:
+        print(f"\n⚠️ Training completed but validation loss ({best_val_loss:.4f}) is high.")
+        print("   Consider: reducing model size, increasing dropout, or getting more diverse data")
 
 if __name__ == "__main__":
     main()
