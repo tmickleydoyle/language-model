@@ -149,13 +149,14 @@ class TestBlock:
 
         assert hasattr(block, 'attention')  # self-attention
         assert hasattr(block, 'feed_forward')  # feed-forward
-        assert hasattr(block, 'ln1')  # layer norm 1
-        assert hasattr(block, 'ln2')  # layer norm 2
+        assert hasattr(block, 'attention_norm')  # attention norm
+        assert hasattr(block, 'ffn_norm')  # feedforward norm
 
-        assert isinstance(block.attention, MultiHeadAttention)
-        assert isinstance(block.feed_forward, FeedForward)
-        assert isinstance(block.ln1, nn.LayerNorm)
-        assert isinstance(block.ln2, nn.LayerNorm)
+        from src.model.gpt import GroupedQueryAttention, SwiGLU, RMSNorm
+        assert isinstance(block.attention, GroupedQueryAttention)
+        assert isinstance(block.feed_forward, SwiGLU)
+        assert isinstance(block.attention_norm, RMSNorm)
+        assert isinstance(block.ffn_norm, RMSNorm)
 
     def test_block_forward(self, small_model_config):
         """Test Block forward pass."""
@@ -195,22 +196,22 @@ class TestGPTLanguageModel:
         model = GPTLanguageModel(small_model_config)
 
         assert hasattr(model, 'token_embedding')
-        assert hasattr(model, 'position_embedding')
+        # Modern model uses RoPE instead of position embeddings
         assert hasattr(model, 'blocks')
-        assert hasattr(model, 'ln_f')
+        assert hasattr(model, 'norm')  # final norm
         assert hasattr(model, 'lm_head')
 
         assert isinstance(model.token_embedding, nn.Embedding)
-        assert isinstance(model.position_embedding, nn.Embedding)
         assert isinstance(model.blocks, nn.ModuleList)
-        assert isinstance(model.ln_f, nn.LayerNorm)
+        from src.model.gpt import RMSNorm
+        assert isinstance(model.norm, RMSNorm)
         assert isinstance(model.lm_head, nn.Linear)
 
         # Check dimensions
         assert model.token_embedding.num_embeddings == small_model_config.vocab_size
         assert model.token_embedding.embedding_dim == small_model_config.n_embd
-        assert model.position_embedding.num_embeddings == small_model_config.block_size
-        assert model.position_embedding.embedding_dim == small_model_config.n_embd
+        assert model.lm_head.in_features == small_model_config.n_embd
+        assert model.lm_head.out_features == small_model_config.vocab_size
         assert len(model.blocks) == small_model_config.n_layer
 
     def test_model_forward(self, small_model_config):

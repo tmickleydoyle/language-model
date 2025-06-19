@@ -115,10 +115,9 @@ def mock_model_state() -> Dict[str, Any]:
     """Create a mock model state dictionary."""
     return {
         "model_state_dict": {
-            "token_embedding_table.weight": torch.randn(100, 64),
-            "position_embedding_table.weight": torch.randn(32, 64),
-            "ln_f.weight": torch.ones(64),
-            "ln_f.bias": torch.zeros(64),
+            "token_embedding.weight": torch.randn(100, 64),
+            "norm.weight": torch.ones(64),  # RMSNorm instead of LayerNorm
+            "lm_head.weight": torch.randn(100, 64),
         },
         "config": {
             "vocab_size": 100,
