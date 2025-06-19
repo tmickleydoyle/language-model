@@ -42,33 +42,30 @@ def train_model_optimized(args):
         device = "cpu"
         print("💻 Using CPU")
     
-    # Read training data (same as original)
-    if os.path.isfile(args.data):
-        print(f"📖 Reading data from file {args.data}")
-        with open(args.data, 'r', encoding='utf-8') as f:
-            text = f.read()
-        print(f"✅ Loaded {len(text):,} characters from single file")
-    elif os.path.isdir(args.data):
-        print(f"📖 Reading data from directory {args.data}")
-        text = ""
-        txt_files = sorted([f for f in os.listdir(args.data) if f.endswith('.txt')])
-        
-        if not txt_files:
-            print(f"❌ Error: No .txt files found in directory: {args.data}")
-            sys.exit(1)
-        
-        print(f"📚 Found {len(txt_files)} text files:")
-        for txt_file in txt_files:
-            file_path = os.path.join(args.data, txt_file)
-            with open(file_path, 'r', encoding='utf-8') as f:
-                file_content = f.read()
-                text += file_content + "\n\n"
-                print(f"  ✅ {txt_file}: {len(file_content):,} characters")
-        
-        print(f"✅ Loaded {len(text):,} total characters from {len(txt_files)} files")
-    else:
-        print(f"❌ Error: Data path not found: {args.data}")
+    # Read training data with file boundary awareness
+    from src.data.file_aware_data_loader import load_files_separately, create_file_aware_split
+    
+    print(f"📖 Loading data with file boundary awareness from {args.data}")
+    files_content = load_files_separately(args.data)
+    
+    if not files_content:
+        print(f"❌ Error: No files found in: {args.data}")
         sys.exit(1)
+    
+    print(f"📚 Found {len(files_content)} files:")
+    total_chars = 0
+    for filename, content in files_content:
+        char_count = len(content)
+        total_chars += char_count
+        print(f"  ✅ {filename}: {char_count:,} characters")
+    
+    print(f"✅ Loaded {total_chars:,} total characters from {len(files_content)} files")
+    
+    # Create file-aware train/val split BEFORE tokenization
+    train_text, val_text = create_file_aware_split(files_content, train_split=0.8)
+    
+    # Use combined text for tokenizer training (maintains vocab consistency)
+    text = train_text + val_text
     
     # Create save directory
     os.makedirs(args.output, exist_ok=True)
@@ -121,14 +118,10 @@ def train_model_optimized(args):
     param_count = sum(p.numel() for p in model.parameters())
     print(f"✅ Model created: {param_count:,} parameters")
     
-    # Create datasets with better validation split (80/20 instead of 90/10)
-    print("🔄 Creating train/validation split...")
+    # Create datasets with file boundary awareness
+    print("🔄 Creating file-aware train/validation split...")
     
-    # Use 80/20 split for better validation
-    split_idx = int(len(text) * 0.8)
-    train_text = text[:split_idx]
-    val_text = text[split_idx:]
-    
+    # Create datasets using pre-split text to maintain file boundaries
     train_dataset = TextDataset(text=train_text, tokenizer=tokenizer, block_size=config.block_size)
     val_dataset = TextDataset(text=val_text, tokenizer=tokenizer, block_size=config.block_size)
     

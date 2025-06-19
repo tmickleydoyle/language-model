@@ -20,7 +20,7 @@ class TestConfig:
         assert config.dropout == 0.1
         assert config.learning_rate == 3e-4
         assert config.batch_size == 64
-        assert config.max_iters == 10000
+        assert config.max_iters == 100000
         assert config.eval_interval == 100
         assert config.eval_iters == 100
         # Device is auto-detected, so check it's one of the valid options

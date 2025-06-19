@@ -1,20 +1,36 @@
 """
 Model package for GPT (Generative Pre-trained Transformer) implementation.
 
-This package provides the GPTLanguageModel class and related
-transformer architecture components.
+This package provides both classic and modern GPT implementations with
+related transformer architecture components.
 """
 
-from .gpt import (
-    GPTLanguageModel,
+from .gpt_classic import (
+    GPTLanguageModel as ClassicGPTLanguageModel,
     MultiHeadAttention,
     FeedForward,
     TransformerBlock,
-    create_model
+    create_model as create_classic_model
 )
 
+from .gpt import (
+    ModernGPTLanguageModel,
+    GPTLanguageModel,  # Main export - now points to modern implementation
+    GroupedQueryAttention,
+    SwiGLU,
+    RMSNorm,
+    RotaryPositionalEmbedding,
+    ModernTransformerBlock,
+    create_model,
+    create_modern_model
+)
+
+# Use modern implementation as default
+GPTLanguageModel = ModernGPTLanguageModel
+create_model = create_modern_model
+
 # Create alias for backwards compatibility with tests
-Block = TransformerBlock
+Block = ModernTransformerBlock
 
 
 def create_model_factory(config, vocab_size):
@@ -26,22 +42,26 @@ def create_model_factory(config, vocab_size):
         vocab_size (int): Size of the vocabulary
 
     Returns:
-        GPTLanguageModel instance
+        ModernGPTLanguageModel instance
     """
-    # Update config with vocab_size
-    config.vocab_size = vocab_size
-
-    model = GPTLanguageModel(config)
-    model = model.to(config.device)
-    return model
+    return create_model(config, vocab_size)
 
 
 __all__ = [
     "GPTLanguageModel",
+    "ModernGPTLanguageModel", 
+    "ClassicGPTLanguageModel",
     "MultiHeadAttention",
     "FeedForward",
     "TransformerBlock",
+    "GroupedQueryAttention",
+    "SwiGLU",
+    "RMSNorm",
+    "RotaryPositionalEmbedding",
+    "ModernTransformerBlock",
     "Block",  # Alias for backwards compatibility
     "create_model",
+    "create_modern_model",
+    "create_classic_model",
     "create_model_factory"
 ]
