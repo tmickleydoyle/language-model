@@ -1,32 +1,70 @@
 # GPT Language Model
 
-A PyTorch implementation of GPT (Generative Pre-trained Transformer) models with clean, simple interface.
+A PyTorch implementation of GPT (Generative Pre-trained Transformer) models with modern architecture improvements and a clean, simple interface.
 
 ## Quick Start
 
-The project provides three main scripts for all your language model needs:
-
-### 1. Train a Model
+### Setup
 ```bash
-python train.py example/raw/example.txt -o my_model
+git clone https://github.com/tmickleydoyle/language-model.git
+cd language-model
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
-### 2. Fine-tune on Q&A Data  
+### Basic Usage
+
+#### 1. Train a Model
+```bash
+# Train on a single file
+python train.py example/raw/science_article_01.txt -o my_model
+
+# Train on all files in directory  
+python train.py example/raw/ -o comprehensive_model
+```
+
+#### 2. Fine-tune on Q&A Data  
 ```bash
 python fine-tune.py my_model example/fine-tuned/story_qa_dataset.json -o fine_tuned_model
 ```
 
-### 3. Ask Questions
+#### 3. Ask Questions
 ```bash
 python ask.py fine_tuned_model --interactive
 ```
 
-## Installation
+## Model Architecture
 
-```bash
-git clone https://github.com/tmickleydoyle/language-model.git
-cd language-model
-pip install -r requirements.txt
+This implementation includes modern transformer improvements:
+- **Grouped Query Attention**: More efficient than standard multi-head attention
+- **RMSNorm**: Better normalization than LayerNorm
+- **RoPE**: Rotary positional encoding for better position understanding
+- **xSwiGLU**: Advanced activation function
+- **QK-Norm**: Improved training stability
+- **Flash Attention**: Optimized attention computation
+
+## Configuration Options
+
+You can customize the model architecture by modifying the config:
+
+```python
+from src.config import Config
+
+# Standard configuration
+config = Config(
+    n_embd=512,        # Embedding dimension
+    n_head=8,          # Number of attention heads  
+    n_layer=6,         # Number of transformer layers
+    block_size=1024,   # Context window size
+    vocab_size=32000   # Vocabulary size
+)
+
+# Advanced options
+config.attention_type = 'mla'     # Use Multi-Head Latent Attention (memory efficient)
+config.attention_type = 'swa'     # Use Sliding Window Attention (long sequences)
+config.position_encoding_type = 'cope'  # Use Contextual Position Encoding
+config.use_moe = True             # Use Mixture of Experts (scalable capacity)
 ```
 
 ## Project Structure
@@ -57,29 +95,39 @@ language-model/
 Train a GPT model from scratch:
 
 ```bash
-# Basic training
-python train.py example/raw/example.txt
+# Basic training (uses modern architecture by default)
+python train.py example/raw/science_article_01.txt -o my_model
 
-# Custom model architecture
-python train.py example/raw/example.txt \
-    --vocab-size 8000 \
+# Custom model configuration
+python train.py example/raw/ \
     --embedding-dim 512 \
     --num-heads 8 \
-    --num-layers 8 \
-    --iterations 5000 \
+    --num-layers 6 \
+    --context-size 1024 \
     --batch-size 16 \
+    --epochs 10 \
     -o custom_model
+
+# Memory-efficient training (smaller model)
+python train.py example/raw/ \
+    --embedding-dim 256 \
+    --num-heads 8 \
+    --num-layers 4 \
+    --context-size 512 \
+    --batch-size 32 \
+    --epochs 5 \
+    -o small_model
 ```
 
-**Options:**
-- `--vocab-size`: Vocabulary size (default: 8000)
-- `--embedding-dim`: Embedding dimension (default: 192)
-- `--num-heads`: Number of attention heads (default: 6)
-- `--num-layers`: Number of layers (default: 4)
-- `--context-size`: Context window size (default: 96)
-- `--iterations`: Training iterations (default: 300)
-- `--batch-size`: Batch size (default: 32)
-- `--learning-rate`: Learning rate (default: 3e-4)
+**Training Options:**
+- `--embedding-dim`: Model dimension (default: 128)
+- `--num-heads`: Number of attention heads (default: 4)  
+- `--num-layers`: Number of transformer layers (default: 3)
+- `--context-size`: Context window size (default: 128)
+- `--epochs`: Training epochs (default: 50)
+- `--batch-size`: Batch size (default: 16)
+- `--learning-rate`: Learning rate (default: 5e-4)
+- `--dropout`: Dropout rate (default: 0.3)
 - `-o, --output`: Output directory name
 
 ### Fine-tuning a Model
@@ -88,9 +136,9 @@ Fine-tune a trained model on Q&A data:
 
 ```bash
 # Basic fine-tuning
-python fine-tune.py my_model example/fine-tuned/story_qa_dataset.json
+python fine-tune.py my_model example/fine-tuned/story_qa_dataset.json -o fine_tuned_model
 
-# Custom fine-tuning
+# Custom fine-tuning parameters
 python fine-tune.py my_model example/fine-tuned/story_qa_dataset.json \
     --epochs 10 \
     --batch-size 8 \
@@ -98,46 +146,46 @@ python fine-tune.py my_model example/fine-tuned/story_qa_dataset.json \
     -o specialized_model
 ```
 
-**Options:**
+**Fine-tuning Options:**
 - `--epochs`: Number of training epochs (default: 8)
 - `--batch-size`: Batch size (default: 4)
 - `--learning-rate`: Learning rate (default: 1e-5)
 - `-o, --output`: Output directory name
 
-### Asking Questions
+### Using Your Trained Model
 
-Interact with your fine-tuned model:
+Interact with your trained model:
 
 ```bash
-# Interactive mode
-python ask.py fine_tuned_model --interactive
+# Interactive chat mode
+python ask.py my_model --interactive
 
-# Single question
-python ask.py fine_tuned_model --question "What is the meaning of life?"
+# Ask a single question
+python ask.py my_model --question "What is machine learning?"
 
-# Batch processing
-python ask.py fine_tuned_model --file questions.txt
+# Process questions from file
+python ask.py my_model --file questions.txt
 
-# Custom generation settings
-python ask.py fine_tuned_model --interactive --temperature 0.7
+# Adjust generation settings
+python ask.py my_model --interactive --temperature 0.7
 ```
 
-**Options:**
-- `--interactive`: Start interactive Q&A session
-- `--question`: Ask a single question
-- `--file`: Process questions from file
-- `--temperature`: Generation randomness (default: 0.7)
+**Generation Options:**
+- `--interactive`: Start interactive chat session
+- `--question`: Ask a single question and exit
+- `--file`: Process questions from a text file
+- `--temperature`: Randomness in generation (0.1=focused, 1.0=creative)
 
 ## Data Formats
 
 ### Training Data
-Plain text files for training:
-```
-example/raw/example.txt
-```
+Plain text files for training. You can use:
+- Single files: `example/raw/science_article_01.txt`
+- Directories: `example/raw/` (trains on all .txt files)
+- Your own text files
 
 ### Fine-tuning Data
-JSON format with question-answer pairs:
+JSON format with instruction-output pairs:
 ```json
 [
     {
@@ -146,20 +194,45 @@ JSON format with question-answer pairs:
     },
     {
         "instruction": "Explain photosynthesis.",
-        "output": "Photosynthesis is the process by which plants convert sunlight into energy..."
+        "output": "Photosynthesis is the process by which plants convert sunlight into energy using chlorophyll..."
     }
 ]
 ```
 
-## Testing
+## Development
 
-Run the test suite:
+### Running Tests
 ```bash
+source venv/bin/activate
 pytest
+```
+
+### Code Quality
+```bash
+# Format code
+black .
+
+# Type checking  
+mypy src/
+
+# Linting
+flake8 src/
 ```
 
 ## Requirements
 
 - Python 3.8+
-- PyTorch 1.8+
-- See `requirements.txt` for full dependencies
+- PyTorch 2.0+
+- See `requirements.txt` for complete dependency list
+
+## Troubleshooting
+
+### Common Issues
+
+**Training is slow**: Reduce model size with `--embedding-dim 256 --num-layers 4`
+
+**Out of memory**: Reduce `--batch-size` or `--context-size`
+
+**Poor results**: Try more training data, longer training (`--epochs`), or larger model
+
+**Generation issues**: Adjust `--temperature` (lower=more focused, higher=more creative)

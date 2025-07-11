@@ -114,12 +114,32 @@ class Config:
         log_file: Optional file path to save logs
     """
 
-    # Model architecture hyperparameters
-    n_embd: int = 384
-    n_head: int = 6
-    n_layer: int = 6
-    block_size: int = 256
+    # Model architecture hyperparameters (modern defaults)
+    n_embd: int = 768
+    n_head: int = 12
+    n_layer: int = 12
+    block_size: int = 2048
     dropout: float = 0.1
+    
+    # Modern architecture components
+    attention_type: str = 'gqa'  # Options: 'gqa', 'mla', 'swa'
+    position_encoding_type: str = 'rope'  # Options: 'rope', 'cope'
+    use_moe: bool = False
+    
+    # Advanced attention settings
+    n_kv_head: Optional[int] = None  # Auto-calculated if None
+    sliding_window_size: int = 4096
+    
+    # MoE settings
+    num_experts: int = 8
+    top_k_experts: int = 2
+    expert_capacity_factor: float = 1.0
+    expert_hidden_factor: float = 0.5
+    load_balancing_loss_weight: float = 0.01
+    
+    # Position encoding settings
+    kv_latent_dim: Optional[int] = None  # Auto-calculated for MLA
+    v_head_dim: Optional[int] = None  # Auto-calculated for MLA
 
     # Training hyperparameters
     batch_size: int = 64
@@ -177,10 +197,24 @@ class Config:
         """Initialize derived and device-dependent settings."""
         self._set_device()
         self._setup_logging()
+        self._set_modern_defaults()
         self._validate_config()
         self._set_random_seed()
 
         logger.info(f"Config initialized with device: {self.device}")
+
+    def _set_modern_defaults(self) -> None:
+        """Set modern architecture defaults."""
+        # Auto-calculate KV heads if not set
+        if self.n_kv_head is None:
+            self.n_kv_head = max(1, self.n_head // 4)
+        
+        # Auto-calculate MLA dimensions if not set
+        if self.kv_latent_dim is None:
+            self.kv_latent_dim = max(64, self.n_embd // 8)
+        
+        if self.v_head_dim is None:
+            self.v_head_dim = max(32, (self.n_embd // self.n_head) // 2)
 
     def _set_device(self) -> None:
         """Set device if not specified or if auto."""

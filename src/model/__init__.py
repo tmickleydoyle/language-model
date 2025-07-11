@@ -17,12 +17,18 @@ from .gpt import (
     ModernGPTLanguageModel,
     GPTLanguageModel,  # Main export - now points to modern implementation
     GroupedQueryAttention,
+    MultiHeadLatentAttention,
+    SlidingWindowAttention,
+    ContextualPositionalEmbedding,
+    MixtureOfExperts,
+    xSwiGLU,
     SwiGLU,
     RMSNorm,
     RotaryPositionalEmbedding,
     ModernTransformerBlock,
     create_model,
-    create_modern_model
+    create_modern_model,
+    create_optimal_model
 )
 
 # Use modern implementation as default
@@ -48,20 +54,39 @@ def create_model_factory(config, vocab_size):
 
 
 __all__ = [
-    "GPTLanguageModel",
+    # Main model classes
+    "GPTLanguageModel",  # Modern by default
     "ModernGPTLanguageModel", 
     "ClassicGPTLanguageModel",
-    "MultiHeadAttention",
-    "FeedForward",
-    "TransformerBlock",
+    
+    # Modern attention mechanisms
     "GroupedQueryAttention",
-    "SwiGLU",
-    "RMSNorm",
+    "MultiHeadLatentAttention", 
+    "SlidingWindowAttention",
+    
+    # Position encodings
     "RotaryPositionalEmbedding",
+    "ContextualPositionalEmbedding",
+    
+    # Feedforward networks
+    "xSwiGLU",  # Modern default
+    "SwiGLU",
+    "MixtureOfExperts",
+    
+    # Other components
+    "RMSNorm",
     "ModernTransformerBlock",
+    
+    # Classic components (for reference)
+    "MultiHeadAttention",
+    "FeedForward", 
+    "TransformerBlock",
     "Block",  # Alias for backwards compatibility
-    "create_model",
+    
+    # Factory functions
+    "create_model",  # Modern by default
     "create_modern_model",
+    "create_optimal_model",  # Best defaults
     "create_classic_model",
     "create_model_factory"
 ]
