@@ -1,6 +1,6 @@
 # GPT Language Model
 
-A PyTorch implementation of GPT (Generative Pre-trained Transformer) models with modern architecture improvements and a clean, simple interface.
+A PyTorch implementation of GPT (Generative Pre-trained Transformer) models with modern architecture improvements, streaming data support, and a clean, simple interface.
 
 ## Quick Start
 
@@ -16,12 +16,28 @@ pip install -r requirements.txt
 ### Basic Usage
 
 #### 1. Train a Model
+
+**Local File Training:**
 ```bash
 # Train on a single file
 python train.py example/raw/science_article_01.txt -o my_model
 
 # Train on all files in directory  
 python train.py example/raw/ -o comprehensive_model
+```
+
+**Streaming Data Training (Recommended for Large Models):**
+```bash
+# Train on massive datasets without local storage
+python train_streaming.py --dataset-config large_mixed \
+    --embedding-dim 768 --num-heads 12 --num-layers 12 \
+    --context-size 2048 --batch-size 8 --epochs 20 \
+    --cache-size 50000 -o large_model
+
+# Quick Wikipedia training
+python train_streaming.py --dataset-config wikipedia_only \
+    --embedding-dim 256 --num-heads 8 --num-layers 6 \
+    -o wiki_model
 ```
 
 #### 2. Fine-tune on Q&A Data  
@@ -43,6 +59,38 @@ This implementation includes modern transformer improvements:
 - **xSwiGLU**: Advanced activation function
 - **QK-Norm**: Improved training stability
 - **Flash Attention**: Optimized attention computation
+
+## Streaming Data System
+
+### Available Data Sources
+- **OpenWebText** - 40GB web content (GPT-2 training data)
+- **The Pile** - 800GB diverse text (academic, books, news, code)
+- **C4** - 750GB cleaned web text (T5 training data)
+- **Wikipedia** - Live articles via API
+- **Project Gutenberg** - Classic books via API
+
+### Dataset Configurations
+```bash
+--dataset-config small_mixed    # 3K samples (Wikipedia + OpenWebText)
+--dataset-config medium_mixed   # 20K samples (3 sources)
+--dataset-config large_mixed    # 100K samples (4 sources)
+--dataset-config wikipedia_only # 20K Wikipedia articles
+--dataset-config web_focused    # 50K web content samples
+```
+
+### Benefits
+✅ **No local storage** - Stream directly from APIs  
+✅ **Massive datasets** - Access to petabytes of text  
+✅ **Always fresh** - New content every training run  
+✅ **Memory efficient** - Configurable cache sizes  
+✅ **Multiple sources** - Mix different data types
+
+### Test Streaming
+```bash
+python test_streaming.py        # Test all streaming components
+python demo_streaming.py        # Quick Wikipedia demo
+python quick_streaming_demo.py  # Full training demo
+```
 
 ## Configuration Options
 
@@ -76,15 +124,22 @@ language-model/
 │   ├── model/               # GPT model implementation
 │   ├── tokenizer/           # BPE tokenizer
 │   ├── data/                # Dataset handling
+│   │   ├── dataset.py       # Local file datasets
+│   │   ├── streaming_data_loader.py  # API data streaming
+│   │   └── streaming_dataset.py      # Streaming PyTorch datasets
 │   ├── training/            # Training infrastructure
 │   └── utils/               # Utility functions
 ├── tests/                   # Test suite
 ├── example/                 # Training datasets
 │   ├── raw/                 # Raw text for training
 │   └── fine-tuned/          # Q&A datasets
-├── train.py                 # Main training script
+├── train.py                 # Local file training script
+├── train_streaming.py       # Streaming data training script
 ├── fine-tune.py             # Fine-tuning script
 ├── ask.py                   # Interactive Q&A script
+├── test_streaming.py        # Test streaming components
+├── demo_streaming.py        # Quick streaming demo
+├── quick_streaming_demo.py  # Full streaming training demo
 └── README.md                # This file
 ```
 
@@ -92,7 +147,8 @@ language-model/
 
 ### Training a Model
 
-Train a GPT model from scratch:
+#### Local File Training
+Train a GPT model from scratch using local files:
 
 ```bash
 # Basic training (uses modern architecture by default)
@@ -119,7 +175,39 @@ python train.py example/raw/ \
     -o small_model
 ```
 
-**Training Options:**
+#### Streaming Data Training
+Train on massive datasets without local storage:
+
+```bash
+# Large-scale training with streaming data
+python train_streaming.py --dataset-config large_mixed \
+    --embedding-dim 768 \
+    --num-heads 12 \
+    --num-layers 12 \
+    --context-size 2048 \
+    --batch-size 8 \
+    --epochs 20 \
+    --cache-size 50000 \
+    -o large_streaming_model
+
+# Wikipedia-only training
+python train_streaming.py --dataset-config wikipedia_only \
+    --embedding-dim 256 \
+    --num-heads 8 \
+    --num-layers 6 \
+    --refresh-rate 3 \
+    -o wiki_model
+
+# Quick test with small model
+python train_streaming.py --dataset-config small_mixed \
+    --embedding-dim 128 \
+    --num-heads 4 \
+    --num-layers 3 \
+    --cache-size 1000 \
+    -o test_model
+```
+
+**Local Training Options:**
 - `--embedding-dim`: Model dimension (default: 128)
 - `--num-heads`: Number of attention heads (default: 4)  
 - `--num-layers`: Number of transformer layers (default: 3)
@@ -129,6 +217,13 @@ python train.py example/raw/ \
 - `--learning-rate`: Learning rate (default: 5e-4)
 - `--dropout`: Dropout rate (default: 0.3)
 - `-o, --output`: Output directory name
+
+**Streaming Training Options:**
+- `--dataset-config`: Data source configuration (small_mixed, large_mixed, etc.)
+- `--cache-size`: Number of samples to cache in memory (default: 10000)
+- `--refresh-rate`: Refresh cache every N epochs (default: 5)
+- `--use-cache`: Use cached streaming dataset (default: True)
+- All local training options also apply
 
 ### Fine-tuning a Model
 
@@ -223,6 +318,10 @@ flake8 src/
 
 - Python 3.8+
 - PyTorch 2.0+
+- **For streaming data:**
+  - datasets>=2.0.0
+  - wikipedia>=1.4.0  
+  - requests>=2.25.0
 - See `requirements.txt` for complete dependency list
 
 ## Troubleshooting
