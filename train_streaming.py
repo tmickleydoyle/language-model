@@ -179,7 +179,6 @@ def train_model_streaming(args):
             val_loss = eval_results if isinstance(eval_results, float) else eval_results.get('val_loss', float('inf'))
             
             epoch_time = time.time() - epoch_start
-            total_time = time.time() - start_time
             
             # Early stopping check
             if val_loss < best_val_loss:
