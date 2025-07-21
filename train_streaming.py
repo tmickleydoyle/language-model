@@ -20,9 +20,10 @@ try:
     from src.config import Config
     from src.model import create_model_factory
     from src.training import Trainer
-    from src.tokenizer import BPETokenizer
+    from src.tokenizer import DefaultTokenizer as BPETokenizer
     from src.data.streaming_dataset import create_streaming_datasets, DATASET_CONFIGS
     from src.data.streaming_data_loader import StreamingDataLoader
+    from src.data.unified_data_manager import UnifiedDataManager
 except Exception as e:
     print(f"❌ Import error: {e}")
     sys.exit(1)
@@ -62,22 +63,26 @@ def train_model_streaming(args):
     # Create save directory
     os.makedirs(args.output, exist_ok=True)
     
-    # Build tokenizer from streaming data
-    print("🔤 Building tokenizer from streaming data...")
+    # Create unified data manager
+    print("🔄 Setting up unified data manager...")
+    data_manager = UnifiedDataManager(
+        sources=sources,
+        cache_dir=os.path.join(args.output, "data_cache"),
+        tokenizer_sample_size=2000,
+        model_cache_size=args.cache_size,
+        batch_size=500  # Use default batch size for now
+    )
     
-    # Get sample text for tokenizer training
-    loader = StreamingDataLoader()
-    sample_sources = {k: min(v, 500) for k, v in sources.items()}  # Limit for tokenizer
-    sample_texts = []
+    # Ensure data is ready (fetch only once)
+    if not data_manager.ensure_data_ready(force_refresh=getattr(args, 'force_refresh_data', False)):
+        print("❌ Failed to prepare data")
+        sys.exit(1)
     
-    print("📚 Collecting sample texts for tokenizer...")
-    for text in loader.stream_mixed_sources(sample_sources, total_samples=2000):
-        sample_texts.append(text)
-        if len(sample_texts) >= 100:  # Limit sample size
-            break
-    
-    combined_text = "\n\n".join(sample_texts)
-    print(f"✅ Collected {len(combined_text):,} characters for tokenizer training")
+    # Build tokenizer from cached data
+    print("🔤 Building tokenizer from cached data...")
+    tokenizer_texts = data_manager.get_tokenizer_texts()
+    combined_text = "\n\n".join(tokenizer_texts)
+    print(f"✅ Using {len(tokenizer_texts)} cached texts ({len(combined_text):,} characters) for tokenizer training")
     
     # Train tokenizer
     tokenizer = BPETokenizer()
@@ -125,19 +130,16 @@ def train_model_streaming(args):
     param_count = sum(p.numel() for p in model.parameters())
     print(f"✅ Model created: {param_count:,} parameters")
     
-    # Create streaming datasets
-    print("🌊 Creating streaming datasets...")
-    train_dataset, val_dataset = create_streaming_datasets(
-        sources=sources,
+    # Create datasets from cached data
+    print("🌊 Creating datasets from cached data...")
+    train_dataset, val_dataset = data_manager.get_model_datasets(
         tokenizer=tokenizer,
         block_size=config.block_size,
-        train_split=0.8,
-        use_cache=args.use_cache,
-        cache_size=args.cache_size
+        train_split=0.8
     )
     
-    print(f"✅ Train dataset created")
-    print(f"✅ Val dataset created")
+    print(f"✅ Train dataset created with {len(train_dataset)} samples")
+    print(f"✅ Val dataset created with {len(val_dataset)} samples")
     
     # Create trainer
     trainer = Trainer(
@@ -248,6 +250,7 @@ def main():
     parser.add_argument("--use-cache", action="store_true", default=True, help="Use cached streaming dataset")
     parser.add_argument("--cache-size", type=int, default=10000, help="Size of data cache (default: 10000)")
     parser.add_argument("--refresh-rate", type=int, default=5, help="Refresh cache every N epochs (default: 5)")
+    parser.add_argument("--force-refresh-data", action="store_true", help="Force refresh of cached data even if it exists")
     
     # Regularization parameters
     parser.add_argument("--dropout", type=float, default=0.3, help="Dropout rate (default: 0.3)")

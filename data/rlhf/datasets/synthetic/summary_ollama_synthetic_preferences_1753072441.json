@@ -1,0 +1,16 @@
+{
+  "total_examples": 299,
+  "categories": {
+    "instruction_following": 99,
+    "question_answering": 100,
+    "explanation_improvement": 100
+  },
+  "quality_types": {
+    "helpful_vs_vague": 299
+  },
+  "avg_chosen_length": 611.876254180602,
+  "avg_rejected_length": 81.8561872909699,
+  "generation_model": "gemma3:latest",
+  "source": "openwebtext_synthetic",
+  "file": "ollama_synthetic_preferences_1753072441.json"
+}

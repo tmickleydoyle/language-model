@@ -22,7 +22,7 @@ try:
     from src.model import create_model_factory
     from src.data import InstructionDataset
     from src.training import FineTuningTrainer
-    from src.tokenizer import BPETokenizer
+    from src.tokenizer import DefaultTokenizer as BPETokenizer
 except Exception as e:
     print(f"❌ Import error: {e}")
     sys.exit(1)

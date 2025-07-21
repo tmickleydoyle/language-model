@@ -11,6 +11,8 @@ from datasets import load_dataset
 import wikipedia
 from itertools import islice
 import warnings
+from requests.exceptions import RequestException
+from urllib3.exceptions import HTTPError
 
 # Suppress warnings from BeautifulSoup and Wikipedia
 warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
@@ -19,9 +21,19 @@ warnings.filterwarnings("ignore", category=UserWarning, module='wikipedia')
 class StreamingDataLoader:
     """Load large datasets from APIs without storing locally"""
     
-    def __init__(self, cache_size: int = 1000):
+    def __init__(self, cache_size: int = 1000, 
+                 wikipedia_delay: float = 0.1,
+                 gutenberg_delay: float = 0.5,
+                 max_retries: int = 3,
+                 base_backoff_delay: float = 1.0):
         self.cache_size = cache_size
         self._cache = []
+        
+        # Rate limiting configuration
+        self.wikipedia_delay = wikipedia_delay
+        self.gutenberg_delay = gutenberg_delay
+        self.max_retries = max_retries
+        self.base_backoff_delay = base_backoff_delay
         
     def stream_openwebtext(self, num_samples: Optional[int] = None) -> Iterator[str]:
         """Stream OpenWebText dataset from Hugging Face"""
@@ -115,12 +127,12 @@ class StreamingDataLoader:
                                wikipedia.exceptions.PageError):
                             continue
                             
-                        # Rate limiting
-                        time.sleep(0.1)
+                        # Rate limiting with configurable delay
+                        time.sleep(self.wikipedia_delay)
                         
                 except Exception as e:
                     print(f"Error fetching Wikipedia articles: {e}")
-                    time.sleep(1)
+                    time.sleep(self.base_backoff_delay)
                     continue
                     
         except Exception as e:
@@ -140,9 +152,10 @@ class StreamingDataLoader:
                     break
                     
                 try:
-                    # Get book metadata
-                    response = requests.get(f"{base_url}?page={page}")
-                    response.raise_for_status()
+                    # Get book metadata with rate limit handling
+                    response = self._make_request_with_retry(f"{base_url}?page={page}")
+                    if response is None:
+                        break
                     data = response.json()
                     
                     if not data.get('results'):
@@ -161,8 +174,9 @@ class StreamingDataLoader:
                         
                         if text_url:
                             try:
-                                text_response = requests.get(text_url)
-                                text_response.raise_for_status()
+                                text_response = self._make_request_with_retry(text_url)
+                                if text_response is None:
+                                    continue
                                 
                                 # Clean and yield text
                                 text = text_response.text
@@ -174,8 +188,8 @@ class StreamingDataLoader:
                                 print(f"Error downloading book {book.get('title', 'Unknown')}: {e}")
                                 continue
                         
-                        # Rate limiting
-                        time.sleep(0.5)
+                        # Rate limiting with configurable delay
+                        time.sleep(self.gutenberg_delay)
                     
                     page += 1
                     
@@ -186,6 +200,52 @@ class StreamingDataLoader:
         except Exception as e:
             print(f"Error setting up Gutenberg streaming: {e}")
             return
+    
+    def _make_request_with_retry(self, url: str, timeout: int = 30) -> Optional[requests.Response]:
+        """Make HTTP request with exponential backoff and rate limit handling"""
+        for attempt in range(self.max_retries):
+            try:
+                response = requests.get(url, timeout=timeout)
+                
+                # Check for rate limiting
+                if response.status_code == 429:
+                    retry_after = self._get_retry_after_delay(response)
+                    print(f"🚦 Rate limited. Waiting {retry_after}s before retry...")
+                    time.sleep(retry_after)
+                    continue
+                    
+                # Check for other HTTP errors
+                response.raise_for_status()
+                return response
+                
+            except (RequestException, HTTPError) as e:
+                delay = self.base_backoff_delay * (2 ** attempt)
+                print(f"⚠️ Request failed (attempt {attempt + 1}/{self.max_retries}): {e}")
+                
+                if attempt < self.max_retries - 1:
+                    print(f"🔄 Retrying in {delay}s...")
+                    time.sleep(delay)
+                else:
+                    print(f"❌ Max retries exceeded for {url}")
+                    return None
+                    
+            except Exception as e:
+                print(f"❌ Unexpected error: {e}")
+                return None
+        
+        return None
+    
+    def _get_retry_after_delay(self, response: requests.Response) -> float:
+        """Extract retry-after delay from response headers"""
+        retry_after = response.headers.get('Retry-After')
+        if retry_after:
+            try:
+                return float(retry_after)
+            except ValueError:
+                pass
+        
+        # Default delay if no Retry-After header
+        return self.base_backoff_delay * 2
     
     def stream_mixed_sources(self, 
                            sources: Dict[str, int], 
@@ -231,7 +291,7 @@ class StreamingDataLoader:
                 except StopIteration:
                     active_sources.remove(source)
                 except Exception as e:
-                    print(f"Error from {source}: {e}")
+                    print(f"⚠️ Error from {source}: {e}")
                     active_sources.remove(source)
 
 def create_streaming_text_generator(sources: Dict[str, int], 

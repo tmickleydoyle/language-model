@@ -21,7 +21,7 @@ try:
     from src.model import create_model_factory
     from src.data import TextDataset
     from src.training import Trainer
-    from src.tokenizer import BPETokenizer
+    from src.tokenizer import DefaultTokenizer as BPETokenizer
 except Exception as e:
     print(f"❌ Import error: {e}")
     sys.exit(1)

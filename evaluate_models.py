@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 try:
     from src.config import Config
     from src.model import create_model_factory
-    from src.tokenizer import BPETokenizer
+    from src.tokenizer import DefaultTokenizer as BPETokenizer
 except Exception as e:
     print(f"❌ Import error: {e}")
     sys.exit(1)

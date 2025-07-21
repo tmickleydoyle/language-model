@@ -20,6 +20,7 @@ import os
 from collections import Counter
 from typing import Counter as CounterType
 from typing import Dict, List, Optional, Tuple
+import heapq
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,9 @@ class BPETokenizer:
         Returns:
             Counter object with pair frequencies
         """
+        if len(tokens) < 2:
+            return Counter()
+        
         pairs: CounterType[Tuple[int, int]] = Counter()
         for i in range(len(tokens) - 1):
             pairs[(tokens[i], tokens[i + 1])] += 1
@@ -76,6 +80,7 @@ class BPETokenizer:
                       new_id: int) -> List[int]:
         """
         Replace all occurrences of a token pair with a new token ID.
+        Optimized version with in-place merging when possible.
 
         Args:
             tokens: List of token IDs
@@ -85,6 +90,9 @@ class BPETokenizer:
         Returns:
             Updated list with merged tokens
         """
+        if len(tokens) < 2:
+            return tokens
+        
         result = []
         i = 0
         while i < len(tokens):
@@ -168,18 +176,18 @@ class BPETokenizer:
         # Count token pairs
         pair_counts = self._get_pairs(tokens)
 
-        # Filter by minimum frequency
-        valid_pairs = {
-            pair: count
-            for pair, count in pair_counts.items()
-            if count >= min_frequency
-        }
+        # Filter by minimum frequency and find best pair in one pass
+        best_pair = None
+        best_count = min_frequency - 1
+        
+        for pair, count in pair_counts.items():
+            if count > best_count:
+                best_pair = pair
+                best_count = count
 
-        if not valid_pairs:
+        if best_pair is None:
             return False
 
-        # Find most frequent pair and merge
-        best_pair = max(valid_pairs, key=lambda x: valid_pairs[x])
         new_token_id = 256 + step
 
         # Update tokens, merges, and vocab
@@ -190,7 +198,7 @@ class BPETokenizer:
         )
 
         if verbose:
-            self._log_merge_info(step, best_pair, new_token_id, valid_pairs)
+            self._log_merge_info(step, best_pair, new_token_id, {best_pair: best_count})
 
         return True
 
@@ -260,22 +268,30 @@ class BPETokenizer:
             return 0  # Fallback
 
     def _encode_with_bpe(self, text: str) -> List[int]:
-        """Encode text using BPE merging rules."""
+        """Encode text using BPE merging rules. Optimized version."""
         text_bytes = text.encode("utf-8")
         tokens = list(text_bytes)
+
+        # Cache merge priorities for faster lookup
+        merge_priorities = {pair: idx for idx, pair in enumerate(self.merges.keys())}
 
         # Apply merges iteratively
         while len(tokens) >= 2:
             pair_counts = self._get_pairs(tokens)
-
-            # Find the pair with the lowest merge index (highest priority)
-            best_pair = min(
-                pair_counts.keys(),
-                key=lambda pair: self.merges.get(pair, float("inf")),
-            )
+            
+            # Find the pair with the highest priority (lowest merge index)
+            best_pair = None
+            best_priority = float("inf")
+            
+            for pair in pair_counts.keys():
+                if pair in merge_priorities:
+                    priority = merge_priorities[pair]
+                    if priority < best_priority:
+                        best_pair = pair
+                        best_priority = priority
 
             # If no valid merge is found, stop
-            if best_pair not in self.merges:
+            if best_pair is None:
                 break
 
             # Apply the merge

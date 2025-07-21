@@ -172,6 +172,13 @@ class Config:
     # Logging configuration
     log_level: str = "INFO"
     log_file: Optional[str] = None
+    
+    # Data loading and caching configuration
+    data_batch_size: int = 500
+    wikipedia_delay: float = 0.1
+    gutenberg_delay: float = 0.5
+    max_api_retries: int = 3
+    api_base_backoff_delay: float = 1.0
 
     def __init__(self, **kwargs: Any) -> None:
         """Initialize Config with backward compatibility."""

@@ -255,8 +255,8 @@ def create_streaming_datasets(sources: Dict[str, int],
 # Example configurations for different data source mixes
 DATASET_CONFIGS = {
     "small_mixed": {
-        "wikipedia": 1000,
-        "openwebtext": 2000
+        "wikipedia": 500,
+        "openwebtext": 500
     },
     
     "medium_mixed": {
@@ -273,11 +273,15 @@ DATASET_CONFIGS = {
     },
     
     "wikipedia_only": {
-        "wikipedia": 20000
+        "wikipedia": 500
     },
     
     "web_focused": {
         "openwebtext": 25000,
         "c4": 25000
-    }
+    },
+
+    "openwebtext_only": {
+        "openwebtext": 50000
+    },
 }

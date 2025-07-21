@@ -1,0 +1,11 @@
+[
+  {
+    "prompt": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost? ",
+    "chosen": "This is a classic problem that tricks many people! Let me work through it step by step.\n\n**Setting up the equations:**\n- Let x = cost of the ball\n- Then the bat costs x + $1.00\n- Total: x + (x + $1.00) = $1.10\n\n**Solving:**\n- 2x + $1.00 = $1.10\n- 2x = $0.10\n- x = $0.05\n\n**Answer:** The ball costs $0.05 (5 cents) and the bat costs $1.05.\n\n**Check:** $0.05 + $1.05 = $1.10 \u2713 and $1.05 - $0.05 = $1.00 \u2713\n\nThe common wrong answer is $0.10, but that would make the bat cost $1.10, totaling $1.20!",
+    "rejected": "The ball costs $0.10 and the bat costs $1.00. That adds up to $1.10 total.",
+    "metadata": {
+      "category": "reasoning",
+      "quality": "correct_vs_incorrect"
+    }
+  }
+]

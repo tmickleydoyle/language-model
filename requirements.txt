@@ -6,6 +6,9 @@ datasets>=2.0.0
 wikipedia>=1.4.0
 requests>=2.25.0
 
+# Fast tokenizer
+tokenizers>=0.13.0
+
 # Testing dependencies
 pytest>=6.0.0
 pytest-cov>=2.10.0
