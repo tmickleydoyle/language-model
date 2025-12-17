@@ -29,12 +29,14 @@ class TextDataset:
     - Batch generation for training and evaluation
     - Support for variable sequence lengths with padding
     - Comprehensive validation and error handling
+    - Optional BOS/EOS token insertion for sequence boundaries
 
     Args:
         text: Optional raw text data string
         file_path: Optional path to text file
         tokenizer: BPE tokenizer instance
         block_size: Context window size for sequences
+        add_special_tokens: Whether to add BOS/EOS tokens to each document
 
     Attributes:
         text: Raw text data
@@ -51,12 +53,14 @@ class TextDataset:
         file_path: Optional[str] = None,
         tokenizer: Optional[BPETokenizer] = None,
         block_size: int = 256,
+        add_special_tokens: bool = True,
     ):
         """Initialize the dataset with validation and setup."""
         self._validate_initialization_params(text, file_path, tokenizer, block_size)
 
         self.tokenizer = tokenizer
         self.block_size = block_size
+        self.add_special_tokens = add_special_tokens
 
         # Load and validate text data
         self.text = self._load_text_data(text, file_path)
@@ -108,8 +112,43 @@ class TextDataset:
         return loaded_text
 
     def _tokenize_text(self) -> torch.Tensor:
-        """Tokenize the text and convert to tensor."""
-        token_list = self.tokenizer.encode(self.text)
+        """Tokenize the text and convert to tensor.
+
+        If add_special_tokens is True, each document (separated by \\n\\n)
+        will be wrapped with BOS and EOS tokens. This teaches the model
+        proper sequence boundaries.
+        """
+        if self.add_special_tokens and hasattr(self.tokenizer, 'encode_with_special_tokens'):
+            # Split by document separator and tokenize each with special tokens
+            doc_separator = "\n\n"
+            documents = self.text.split(doc_separator)
+            num_docs = len(documents)
+
+            logger.info(f"Encoding {num_docs:,} documents with special tokens...")
+
+            all_tokens = []
+            docs_processed = 0
+            for doc in documents:
+                doc = doc.strip()
+                if doc:
+                    # Add BOS at start, EOS at end of each document
+                    doc_tokens = self.tokenizer.encode_with_special_tokens(
+                        doc, add_bos=True, add_eos=True
+                    )
+                    all_tokens.extend(doc_tokens)
+                    docs_processed += 1
+
+                    # Progress logging every 5000 documents
+                    if docs_processed % 5000 == 0:
+                        logger.info(f"  Encoded {docs_processed:,}/{num_docs:,} documents ({docs_processed*100//num_docs}%)...")
+
+            logger.info(f"Encoding complete: {docs_processed:,} documents -> {len(all_tokens):,} tokens")
+            token_list = all_tokens if all_tokens else self.tokenizer.encode(self.text)
+        else:
+            logger.info(f"Encoding {len(self.text):,} characters...")
+            token_list = self.tokenizer.encode(self.text)
+            logger.info(f"Encoding complete: {len(token_list):,} tokens")
+
         tokens = torch.tensor(token_list, dtype=torch.long)
 
         self._validate_tokenization(tokens)

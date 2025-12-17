@@ -18,7 +18,7 @@ while maintaining functionality for language model training.
 import logging
 import os
 from collections import Counter
-from typing import Counter as CounterType
+from typing import Any, Counter as CounterType
 from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -36,26 +36,63 @@ class BPETokenizer:
         vocab: Dictionary mapping token IDs to their byte representations
         encoder: Dictionary mapping tokens to IDs (for vocab files)
         decoder: Dictionary mapping IDs to tokens (for vocab files)
+
+    Special Tokens:
+        - PAD (256): Padding token for batching
+        - BOS (257): Beginning of sequence/story
+        - EOS (258): End of sequence/story
+        - UNK (259): Unknown token (reserved)
     """
+
+    # Special token IDs (reserved after byte tokens 0-255)
+    PAD_TOKEN_ID = 256
+    BOS_TOKEN_ID = 257
+    EOS_TOKEN_ID = 258
+    UNK_TOKEN_ID = 259
+    NUM_SPECIAL_TOKENS = 4
+
+    # Special token strings
+    PAD_TOKEN = "<|pad|>"
+    BOS_TOKEN = "<|startoftext|>"
+    EOS_TOKEN = "<|endoftext|>"
+    UNK_TOKEN = "<|unk|>"
 
     def __init__(
         self,
         encoder_file: Optional[str] = None,
         decoder_file: Optional[str] = None,
+        use_special_tokens: bool = True,
     ) -> None:
         """Initialize a BPE tokenizer, optionally loading vocab from files.
 
         Args:
             encoder_file: Path to encoder vocabulary file
             decoder_file: Path to decoder vocabulary file
+            use_special_tokens: Whether to include special tokens in vocabulary
         """
         self.merges: Dict[Tuple[int, int], int] = {}
         self.vocab: Dict[int, bytes] = {}
         self.encoder: Dict[str, int] = {}
         self.decoder: Dict[int, str] = {}
+        self.use_special_tokens = use_special_tokens
 
         if encoder_file and decoder_file:
             self.load_vocab_files(encoder_file, decoder_file)
+
+    @property
+    def bos_token_id(self) -> int:
+        """Return the beginning of sequence token ID."""
+        return self.BOS_TOKEN_ID
+
+    @property
+    def eos_token_id(self) -> int:
+        """Return the end of sequence token ID."""
+        return self.EOS_TOKEN_ID
+
+    @property
+    def pad_token_id(self) -> int:
+        """Return the padding token ID."""
+        return self.PAD_TOKEN_ID
 
     def _get_pairs(self, tokens: List[int]) -> CounterType[Tuple[int, int]]:
         """
@@ -116,8 +153,9 @@ class BPETokenizer:
         Raises:
             ValueError: If max_vocab_size is less than 256
         """
-        if max_vocab_size < 256:
-            raise ValueError("max_vocab_size must be at least 256 for byte-level BPE")
+        min_vocab = 256 + (self.NUM_SPECIAL_TOKENS if self.use_special_tokens else 0)
+        if max_vocab_size < min_vocab:
+            raise ValueError(f"max_vocab_size must be at least {min_vocab} for byte-level BPE")
 
         logger.info(f"Training BPE tokenizer on {len(text)} characters")
 
@@ -136,9 +174,25 @@ class BPETokenizer:
         return list(text_bytes)
 
     def _initialize_base_vocab(self) -> None:
-        """Initialize vocabulary with all possible bytes."""
+        """Initialize vocabulary with all possible bytes and special tokens."""
+        # Byte tokens (0-255)
         self.vocab = {i: bytes([i]) for i in range(256)}
+
+        # Add special tokens if enabled
+        if self.use_special_tokens:
+            self.vocab[self.PAD_TOKEN_ID] = self.PAD_TOKEN.encode("utf-8")
+            self.vocab[self.BOS_TOKEN_ID] = self.BOS_TOKEN.encode("utf-8")
+            self.vocab[self.EOS_TOKEN_ID] = self.EOS_TOKEN.encode("utf-8")
+            self.vocab[self.UNK_TOKEN_ID] = self.UNK_TOKEN.encode("utf-8")
+
         self.merges = {}
+
+    @property
+    def base_vocab_size(self) -> int:
+        """Return the size of base vocabulary (bytes + special tokens)."""
+        if self.use_special_tokens:
+            return 256 + self.NUM_SPECIAL_TOKENS
+        return 256
 
     def _perform_merging(
         self,
@@ -148,23 +202,35 @@ class BPETokenizer:
         min_frequency: int,
     ) -> None:
         """Perform iterative merging of most frequent pairs."""
-        num_merges = max_vocab_size - 256
+        base = self.base_vocab_size
+        num_merges = max_vocab_size - base
 
         for i in range(num_merges):
-            if not self._merge_step(tokens, i, verbose, min_frequency):
+            if not self._merge_step(tokens, i, verbose, min_frequency, base):
                 logger.info(
-                    f"No more valid pairs to merge. Stopping at {256 + i} tokens."
+                    f"No more valid pairs to merge. Stopping at {base + i} tokens."
                 )
                 break
 
     def _merge_step(
-        self, tokens: List[int], step: int, verbose: bool, min_frequency: int
+        self, tokens: List[int], step: int, verbose: bool, min_frequency: int,
+        base: Optional[int] = None
     ) -> bool:
         """Perform a single merge step.
+
+        Args:
+            tokens: List of token IDs to merge
+            step: Current merge step number
+            verbose: Whether to log merge info
+            min_frequency: Minimum frequency for valid pairs
+            base: Base vocabulary size (defaults to self.base_vocab_size)
 
         Returns:
             True if merge was performed, False if no valid pairs found
         """
+        if base is None:
+            base = self.base_vocab_size
+
         # Count token pairs
         pair_counts = self._get_pairs(tokens)
 
@@ -180,7 +246,7 @@ class BPETokenizer:
 
         # Find most frequent pair and merge
         best_pair = max(valid_pairs, key=lambda x: valid_pairs[x])
-        new_token_id = 256 + step
+        new_token_id = base + step
 
         # Update tokens, merges, and vocab
         tokens[:] = self._merge_tokens(tokens, best_pair, new_token_id)
@@ -284,11 +350,37 @@ class BPETokenizer:
 
         return tokens
 
-    def decode(self, token_ids: List[int]) -> str:
+    def encode_with_special_tokens(
+        self,
+        text: str,
+        add_bos: bool = True,
+        add_eos: bool = True,
+    ) -> List[int]:
+        """Encode text with optional BOS and EOS tokens.
+
+        Args:
+            text: Input text to encode
+            add_bos: Whether to prepend BOS token
+            add_eos: Whether to append EOS token
+
+        Returns:
+            List of token IDs with special tokens
+        """
+        tokens = self.encode(text)
+
+        if add_bos and self.use_special_tokens:
+            tokens = [self.BOS_TOKEN_ID] + tokens
+        if add_eos and self.use_special_tokens:
+            tokens = tokens + [self.EOS_TOKEN_ID]
+
+        return tokens
+
+    def decode(self, token_ids: List[int], skip_special_tokens: bool = True) -> str:
         """Decode a list of token IDs back to text.
 
         Args:
             token_ids: List of token IDs to decode
+            skip_special_tokens: Whether to remove special tokens from output
 
         Returns:
             Decoded text string
@@ -297,6 +389,14 @@ class BPETokenizer:
             ValueError: If tokenizer has not been trained/loaded or
                        unknown token encountered
         """
+        # Filter out special tokens if requested
+        if skip_special_tokens and self.use_special_tokens:
+            special_ids = {
+                self.PAD_TOKEN_ID, self.BOS_TOKEN_ID,
+                self.EOS_TOKEN_ID, self.UNK_TOKEN_ID
+            }
+            token_ids = [t for t in token_ids if t not in special_ids]
+
         if self.decoder:
             return self._decode_with_vocab_files(token_ids)
         elif self.vocab:
@@ -317,7 +417,23 @@ class BPETokenizer:
     def _decode_with_bpe(self, token_ids: List[int]) -> str:
         """Decode token IDs using BPE vocabulary."""
         try:
-            text_bytes = b"".join(self.vocab[token_id] for token_id in token_ids)
+            # Handle special tokens - they store the string representation as bytes
+            result_parts = []
+            for token_id in token_ids:
+                token_bytes = self.vocab[token_id]
+                # Check if this is a special token (stored as its string form)
+                if token_id in {self.PAD_TOKEN_ID, self.BOS_TOKEN_ID,
+                               self.EOS_TOKEN_ID, self.UNK_TOKEN_ID}:
+                    # Return the special token string as-is
+                    result_parts.append(token_bytes.decode("utf-8"))
+                else:
+                    result_parts.append(token_bytes)
+
+            # Join byte parts and decode
+            text_bytes = b"".join(
+                p if isinstance(p, bytes) else p.encode("utf-8")
+                for p in result_parts
+            )
             return text_bytes.decode("utf-8", errors="replace")
         except KeyError as e:
             raise ValueError(f"Unknown token ID: {e}")
@@ -489,6 +605,218 @@ class BPETokenizer:
             return len(self.vocab)
         else:
             return 0
+
+    def train_for_domain(
+        self,
+        text: str,
+        target_vocab_size: int = 6000,
+        min_frequency: int = 3,
+        coverage_threshold: float = 0.995,
+    ) -> Dict[str, Any]:
+        """Train tokenizer optimized for domain-specific text.
+
+        This method builds a vocabulary that covers the training corpus well
+        while keeping vocabulary size appropriate for the data size.
+
+        Args:
+            text: Training corpus text
+            target_vocab_size: Target vocabulary size (default 6000)
+            min_frequency: Minimum frequency for merging (default 3)
+            coverage_threshold: Stop when this coverage is reached (default 99.5%)
+
+        Returns:
+            Dictionary with training statistics:
+            - final_vocab_size: Actual vocabulary size achieved
+            - coverage: Token coverage ratio
+            - avg_token_length: Average characters per token
+            - compression_ratio: Original chars / tokens
+        """
+        logger.info(f"Training domain tokenizer on {len(text):,} characters")
+        logger.info(f"Target vocab size: {target_vocab_size}, coverage threshold: {coverage_threshold}")
+
+        # Initialize
+        tokens = self._initialize_tokens(text)
+        self._initialize_base_vocab()
+
+        initial_token_count = len(tokens)
+        num_merges = target_vocab_size - 256
+
+        for i in range(num_merges):
+            # Count pairs and filter by frequency
+            pair_counts = self._get_pairs(tokens)
+            valid_pairs = {
+                pair: count
+                for pair, count in pair_counts.items()
+                if count >= min_frequency
+            }
+
+            if not valid_pairs:
+                logger.info(f"No more valid pairs at merge {i}. Vocab size: {256 + i}")
+                break
+
+            # Find and apply best merge
+            best_pair = max(valid_pairs, key=lambda x: valid_pairs[x])
+            new_token_id = 256 + i
+
+            tokens = self._merge_tokens(tokens, best_pair, new_token_id)
+            self.merges[best_pair] = new_token_id
+            self.vocab[new_token_id] = (
+                self.vocab[best_pair[0]] + self.vocab[best_pair[1]]
+            )
+
+            # Check coverage periodically
+            if (i + 1) % 500 == 0:
+                coverage_stats = self._compute_coverage_quick(tokens, initial_token_count)
+                logger.info(
+                    f"Merge {i + 1}: vocab={256 + i + 1}, "
+                    f"compression={coverage_stats['compression_ratio']:.2f}x"
+                )
+
+        # Compute final statistics
+        final_stats = self.get_coverage_stats(text)
+        logger.info(f"Training complete. Final vocab: {len(self.vocab)}")
+        logger.info(f"Coverage: {final_stats['coverage_ratio']:.2%}")
+        logger.info(f"Compression: {final_stats['compression_ratio']:.2f}x")
+
+        return final_stats
+
+    def _compute_coverage_quick(
+        self, current_tokens: List[int], initial_count: int
+    ) -> Dict[str, float]:
+        """Quick coverage computation during training."""
+        return {
+            "compression_ratio": initial_count / max(len(current_tokens), 1),
+            "token_count": len(current_tokens),
+        }
+
+    def get_coverage_stats(self, text: str) -> Dict[str, Any]:
+        """Calculate how well the vocabulary covers a text corpus.
+
+        Args:
+            text: Text corpus to analyze
+
+        Returns:
+            Dictionary with coverage statistics:
+            - known_tokens: Count of tokens with vocabulary entries
+            - total_tokens: Total token count
+            - coverage_ratio: Percentage of characters in known tokens
+            - avg_token_length: Average characters per token
+            - compression_ratio: Original chars / tokens
+            - vocab_size: Current vocabulary size
+        """
+        if not self.vocab and not self.encoder:
+            return {
+                "known_tokens": 0,
+                "total_tokens": 0,
+                "coverage_ratio": 0.0,
+                "avg_token_length": 0.0,
+                "compression_ratio": 0.0,
+                "vocab_size": 0,
+            }
+
+        # Encode the text
+        tokens = self.encode(text)
+        total_tokens = len(tokens)
+
+        # Count known vs unknown tokens
+        known_count = 0
+        unknown_count = 0
+
+        for token_id in tokens:
+            if self.vocab:
+                if token_id in self.vocab:
+                    known_count += 1
+                else:
+                    unknown_count += 1
+            elif self.encoder:
+                if token_id in self.decoder:
+                    known_count += 1
+                else:
+                    unknown_count += 1
+
+        # Compute statistics
+        coverage_ratio = known_count / max(total_tokens, 1)
+        avg_token_length = len(text) / max(total_tokens, 1)
+        compression_ratio = len(text) / max(total_tokens, 1)
+
+        return {
+            "known_tokens": known_count,
+            "unknown_tokens": unknown_count,
+            "total_tokens": total_tokens,
+            "coverage_ratio": coverage_ratio,
+            "avg_token_length": avg_token_length,
+            "compression_ratio": compression_ratio,
+            "vocab_size": self.vocab_size,
+            "text_length": len(text),
+        }
+
+    def estimate_optimal_vocab_size(
+        self,
+        text: str,
+        test_sizes: Optional[List[int]] = None,
+        target_coverage: float = 0.99,
+    ) -> Dict[str, Any]:
+        """Estimate optimal vocabulary size for target coverage.
+
+        Args:
+            text: Text corpus to analyze
+            test_sizes: List of vocabulary sizes to test
+            target_coverage: Target coverage ratio
+
+        Returns:
+            Dictionary with recommendations:
+            - recommended_size: Suggested vocabulary size
+            - size_coverage_pairs: List of (size, coverage) tuples
+            - text_stats: Basic text statistics
+        """
+        if test_sizes is None:
+            test_sizes = [2000, 4000, 6000, 8000, 10000, 15000]
+
+        results = []
+        text_length = len(text)
+        estimated_tokens = text_length // 4  # Rough estimate
+
+        logger.info(f"Testing vocabulary sizes on {text_length:,} chars ({estimated_tokens:,} est. tokens)")
+
+        for vocab_size in test_sizes:
+            # Train a temporary tokenizer
+            temp_tokenizer = BPETokenizer()
+            temp_tokenizer.train(text, max_vocab_size=vocab_size, min_frequency=2)
+
+            # Get coverage stats
+            stats = temp_tokenizer.get_coverage_stats(text)
+            results.append({
+                "vocab_size": vocab_size,
+                "actual_vocab": stats["vocab_size"],
+                "coverage": stats["coverage_ratio"],
+                "compression": stats["compression_ratio"],
+                "tokens": stats["total_tokens"],
+            })
+
+            logger.info(
+                f"  {vocab_size:>6}: vocab={stats['vocab_size']:>5}, "
+                f"coverage={stats['coverage_ratio']:.2%}, "
+                f"compression={stats['compression_ratio']:.2f}x"
+            )
+
+        # Find recommended size
+        recommended = None
+        for result in results:
+            if result["coverage"] >= target_coverage:
+                recommended = result["vocab_size"]
+                break
+
+        if recommended is None:
+            recommended = test_sizes[-1]  # Use largest if none meet threshold
+
+        return {
+            "recommended_size": recommended,
+            "results": results,
+            "text_stats": {
+                "length": text_length,
+                "estimated_tokens": estimated_tokens,
+            },
+        }
 
     @property
     def is_loaded(self) -> bool:

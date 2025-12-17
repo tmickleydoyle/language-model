@@ -244,7 +244,7 @@ class TestUtils:
         # Should have defaults for unspecified values
         # n_head is auto-adjusted to 8 for n_embd=512 to ensure divisibility
         assert loaded_config.n_head == 8  # Auto-adjusted for n_embd=512
-        assert loaded_config.n_layer == 6  # Default value
+        assert loaded_config.n_layer == 12  # Modern default (was 6)
 
     def test_config_roundtrip_json(self, temp_dir):
         """Test complete roundtrip: config -> JSON -> config."""

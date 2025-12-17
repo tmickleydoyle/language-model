@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 try:
     from src.config import Config
-    from src.model import create_model_factory
+    from src.model import create_model_factory, create_recursive_model
     from src.data import TextDataset
     from src.training import Trainer
     from src.tokenizer import BPETokenizer
@@ -31,8 +31,11 @@ def train_model_optimized(args):
     print("🚀 OPTIMIZED GPT TRAINING")
     print("=" * 35)
     
-    # Detect best available device
-    if torch.cuda.is_available():
+    # Detect or use specified device
+    if args.device:
+        device = args.device
+        print(f"🎯 Using specified device: {device}")
+    elif torch.cuda.is_available():
         device = "cuda"
         print(f"🔥 Using GPU: {torch.cuda.get_device_name()}")
     elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
@@ -52,13 +55,8 @@ def train_model_optimized(args):
         print(f"❌ Error: No files found in: {args.data}")
         sys.exit(1)
     
-    print(f"📚 Found {len(files_content)} files:")
-    total_chars = 0
-    for filename, content in files_content:
-        char_count = len(content)
-        total_chars += char_count
-        print(f"  ✅ {filename}: {char_count:,} characters")
-    
+    print(f"📚 Found {len(files_content)} files")
+    total_chars = sum(len(content) for _, content in files_content)
     print(f"✅ Loaded {total_chars:,} total characters from {len(files_content)} files")
     
     # Create file-aware train/val split BEFORE tokenization
@@ -108,13 +106,25 @@ def train_model_optimized(args):
         weight_decay=args.weight_decay,  # L2 regularization
         grad_clip=1.0,  # Gradient clipping
         fp16=args.mixed_precision and device != "cpu",  # Mixed precision for speed
+        use_scheduler=args.use_scheduler,  # Dynamic learning rate
+        epochs=args.epochs,  # For scheduler config
+        # Recursive reasoning parameters
+        use_recursive=args.use_recursive,
+        recursion_depth=args.recursion_depth,
+        latent_steps=args.latent_steps,
+        early_stop_threshold=args.early_stop_threshold,
     )
     
     print(f"🏗️ Model: {config.n_layer}L-{config.n_embd}D-{config.n_head}H on {device}")
     print(f"⚙️ Training: dropout={config.dropout}, weight_decay={config.weight_decay}")
-    
-    # Create model
-    model = create_model_factory(config, vocab_size)
+
+    # Create recursive model if enabled, otherwise use standard model
+    if args.use_recursive:
+        print(f"🔄 Recursive reasoning: depth={config.recursion_depth}, latent_steps={config.latent_steps}")
+        model = create_recursive_model(config, vocab_size)
+    else:
+        model = create_model_factory(config, vocab_size)
+
     param_count = sum(p.numel() for p in model.parameters())
     print(f"✅ Model created: {param_count:,} parameters")
     
@@ -228,10 +238,18 @@ def main():
     parser.add_argument("--dropout", type=float, default=0.3, help="Dropout rate (default: 0.3)")
     parser.add_argument("--weight-decay", type=float, default=0.01, help="Weight decay (default: 0.01)")
     parser.add_argument("--early-stopping-patience", type=int, default=8, help="Early stopping patience (default: 8)")
+    parser.add_argument("--use-scheduler", action="store_true", help="Enable learning rate scheduling (cosine annealing)")
+
+    # Recursive reasoning parameters
+    parser.add_argument("--use-recursive", action="store_true", help="Enable recursive latent reasoning")
+    parser.add_argument("--recursion-depth", type=int, default=3, help="Number of recursion iterations (default: 3)")
+    parser.add_argument("--latent-steps", type=int, default=6, help="Latent reasoning steps per recursion (default: 6)")
+    parser.add_argument("--early-stop-threshold", type=float, default=0.5, help="Confidence threshold for early stopping (default: 0.5)")
     
     # Performance parameters
     parser.add_argument("--eval-interval", type=int, default=1, help="Evaluation interval in epochs (default: 1)")
     parser.add_argument("--save-interval", type=int, default=10, help="Save checkpoint interval in epochs (default: 10)")
+    parser.add_argument("--device", type=str, default=None, help="Device to use (cpu/mps/cuda). Auto-detected if not specified.")
     parser.add_argument("--mixed-precision", action="store_true", help="Use mixed precision training for speed")
     
     args = parser.parse_args()

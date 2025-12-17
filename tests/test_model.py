@@ -152,9 +152,9 @@ class TestBlock:
         assert hasattr(block, 'attention_norm')  # attention norm
         assert hasattr(block, 'ffn_norm')  # feedforward norm
 
-        from src.model.gpt import GroupedQueryAttention, SwiGLU, RMSNorm
+        from src.model.gpt import GroupedQueryAttention, SwiGLU, xSwiGLU, RMSNorm
         assert isinstance(block.attention, GroupedQueryAttention)
-        assert isinstance(block.feed_forward, SwiGLU)
+        assert isinstance(block.feed_forward, (SwiGLU, xSwiGLU))  # Modern uses xSwiGLU
         assert isinstance(block.attention_norm, RMSNorm)
         assert isinstance(block.ffn_norm, RMSNorm)
 
@@ -166,10 +166,11 @@ class TestBlock:
         seq_len = 8
         x = torch.randn(batch_size, seq_len, small_model_config.n_embd)
 
-        output = block(x)
+        output, load_balancing_loss = block(x)  # Modern block returns tuple
 
         assert output.shape == x.shape
         assert output.dtype == x.dtype
+        assert load_balancing_loss is None  # No MoE by default
 
     def test_block_residual_connections(self, small_model_config):
         """Test that residual connections work properly."""
@@ -180,7 +181,7 @@ class TestBlock:
         x = torch.randn(1, 4, small_model_config.n_embd)
 
         with torch.no_grad():
-            output = block(x)
+            output, _ = block(x)  # Modern block returns tuple
 
         # Output should be different from input (due to transformations)
         # but should maintain reasonable magnitude due to residual connections

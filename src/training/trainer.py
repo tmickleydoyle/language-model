@@ -7,12 +7,15 @@ This module provides comprehensive training functionality including:
 - Checkpoint saving and loading with state preservation
 - Text generation capabilities during training
 - Progress tracking and logging
+- Perplexity and diversity metrics for quality monitoring
 """
 
 import logging
+import math
 import time
+from collections import Counter
 from pathlib import Path
-from typing import Dict, Optional, Union, Any, Tuple
+from typing import Dict, List, Optional, Union, Any, Tuple
 
 import torch
 from torch.amp import GradScaler, autocast
@@ -23,6 +26,89 @@ from ..utils import count_parameters, format_parameter_count
 from ..config import Config
 
 logger = logging.getLogger(__name__)
+
+
+def compute_perplexity(loss: float) -> float:
+    """Convert cross-entropy loss to perplexity.
+
+    Perplexity is a standard metric for language models.
+    Lower is better:
+    - < 20: Excellent for domain-specific models
+    - 20-50: Good for small models
+    - 50-100: Acceptable
+    - > 100: Model is struggling
+
+    Args:
+        loss: Cross-entropy loss value
+
+    Returns:
+        Perplexity value (exp of loss, capped at 10000)
+    """
+    # Cap loss to prevent overflow
+    capped_loss = min(loss, 10.0)
+    return math.exp(capped_loss)
+
+
+def compute_diversity_metrics(samples: List[str]) -> Dict[str, float]:
+    """Compute diversity metrics for generated samples.
+
+    Measures how diverse and non-repetitive generated text is.
+    Higher values indicate more diverse output.
+
+    Args:
+        samples: List of generated text samples
+
+    Returns:
+        Dictionary with diversity metrics:
+        - unique_1gram_ratio: Ratio of unique words
+        - unique_2gram_ratio: Ratio of unique bigrams
+        - unique_3gram_ratio: Ratio of unique trigrams
+        - avg_length: Average sample length in words
+        - repetition_score: Inverse measure of repetition (higher = less repetitive)
+    """
+    if not samples:
+        return {
+            "unique_1gram_ratio": 0.0,
+            "unique_2gram_ratio": 0.0,
+            "unique_3gram_ratio": 0.0,
+            "avg_length": 0.0,
+            "repetition_score": 0.0,
+        }
+
+    all_words: List[str] = []
+    all_bigrams: List[Tuple[str, str]] = []
+    all_trigrams: List[Tuple[str, str, str]] = []
+    lengths: List[int] = []
+
+    for sample in samples:
+        words = sample.split()
+        lengths.append(len(words))
+        all_words.extend(words)
+
+        # Bigrams
+        for i in range(len(words) - 1):
+            all_bigrams.append((words[i], words[i + 1]))
+
+        # Trigrams
+        for i in range(len(words) - 2):
+            all_trigrams.append((words[i], words[i + 1], words[i + 2]))
+
+    # Compute ratios
+    unique_1gram = len(set(all_words)) / max(len(all_words), 1)
+    unique_2gram = len(set(all_bigrams)) / max(len(all_bigrams), 1)
+    unique_3gram = len(set(all_trigrams)) / max(len(all_trigrams), 1)
+
+    # Repetition score: average of unique ratios
+    repetition_score = (unique_1gram + unique_2gram + unique_3gram) / 3
+
+    return {
+        "unique_1gram_ratio": unique_1gram,
+        "unique_2gram_ratio": unique_2gram,
+        "unique_3gram_ratio": unique_3gram,
+        "avg_length": sum(lengths) / max(len(lengths), 1),
+        "repetition_score": repetition_score,
+        "total_words": len(all_words),
+    }
 
 
 class Trainer:
@@ -84,6 +170,21 @@ class Trainer:
             )
         else:
             self.optimizer = optimizer
+
+        # Initialize learning rate scheduler (cosine annealing with warmup)
+        self.scheduler: Optional[torch.optim.lr_scheduler.LRScheduler] = None
+        if hasattr(self.config, 'use_scheduler') and self.config.use_scheduler:
+            warmup_epochs = getattr(self.config, 'warmup_epochs', 5)
+            total_epochs = getattr(self.config, 'epochs', 100)
+
+            # Cosine annealing after warmup
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+                self.optimizer,
+                T_0=max(10, total_epochs // 5),  # Restart every 20% of training
+                T_mult=2,  # Double restart period each time
+                eta_min=self.config.learning_rate / 100  # Min LR is 1% of initial
+            )
+            logger.info(f"Initialized CosineAnnealingWarmRestarts scheduler with T_0={max(10, total_epochs // 5)}")
 
     def _initialize_training_state(self) -> None:
         """Initialize training state variables and gradient scaler."""
@@ -148,24 +249,76 @@ class Trainer:
         return loss
 
     def _forward_backward_step(self, x: torch.Tensor, y: torch.Tensor) -> float:
-        """Execute forward and backward pass with mixed precision support."""
+        """Execute forward and backward pass with mixed precision support and gradient monitoring."""
         # Forward pass with mixed precision
         device = "cuda" if self.config.fp16 else "cpu"
         with autocast(device, enabled=self.config.fp16):
             logits, loss = self.model(x, y)
+
+        # Check for NaN/Inf in loss
+        if not torch.isfinite(loss):
+            logger.error(f"Loss is {'NaN' if torch.isnan(loss) else 'Inf'}! Skipping this batch.")
+            return float('inf')
 
         # Backward pass
         self.optimizer.zero_grad(set_to_none=True)
 
         if self.config.fp16:
             self.scaler.scale(loss).backward()
+            # Gradient clipping for stability
+            if hasattr(self.config, 'grad_clip') and self.config.grad_clip > 0:
+                self.scaler.unscale_(self.optimizer)
+                grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.grad_clip)
+                # Log gradient norm periodically
+                if self.global_step % 100 == 0:
+                    logger.debug(f"Step {self.global_step}: Grad norm = {grad_norm:.4f}")
             self.scaler.step(self.optimizer)
             self.scaler.update()
         else:
             loss.backward()
+
+            # Monitor gradients for NaN/Inf and compute statistics
+            total_norm = 0.0
+            nan_count = 0
+            inf_count = 0
+
+            for name, param in self.model.named_parameters():
+                if param.grad is not None:
+                    param_norm = param.grad.data.norm(2)
+                    total_norm += param_norm.item() ** 2
+
+                    # Check for NaN/Inf in gradients
+                    if torch.isnan(param.grad).any():
+                        nan_count += 1
+                        logger.warning(f"NaN gradient detected in {name}")
+                    if torch.isinf(param.grad).any():
+                        inf_count += 1
+                        logger.warning(f"Inf gradient detected in {name}")
+
+            total_norm = total_norm ** 0.5
+
+            # Log gradient statistics periodically
+            if self.global_step % 100 == 0:
+                logger.debug(f"Step {self.global_step}: Grad norm = {total_norm:.4f}")
+
+            # Warn if gradients are problematic
+            if nan_count > 0 or inf_count > 0:
+                logger.error(f"Gradient issues detected: {nan_count} NaN, {inf_count} Inf parameters. Skipping update.")
+                return float('inf')
+
+            # Gradient clipping for stability
+            if hasattr(self.config, 'grad_clip') and self.config.grad_clip > 0:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.grad_clip)
+
             self.optimizer.step()
 
-        return float(loss.item())
+        loss_val = float(loss.item())
+
+        # Final check for NaN/Inf after optimization step
+        if not torch.isfinite(torch.tensor(loss_val)):
+            logger.warning("Loss became NaN/Inf after optimization step")
+
+        return loss_val
 
     @torch.no_grad()
     def evaluate(self) -> Optional[Union[Dict[str, float], float]]:
@@ -317,14 +470,22 @@ class Trainer:
         eval_results: Optional[Union[Dict[str, float], float]],
         start_time: float,
     ) -> None:
-        """Log progress for epoch-based training."""
+        """Log progress for epoch-based training with enhanced metrics."""
         elapsed = time.time() - start_time
         train_loss, val_loss = self._extract_losses(eval_results, avg_loss)
 
+        # Get current learning rate
+        current_lr = self.optimizer.param_groups[0]['lr']
+
+        # Compute perplexity
+        train_ppl = compute_perplexity(train_loss)
+        val_ppl = compute_perplexity(val_loss)
+
         logger.info(
             f"Epoch {epoch:3d} | "
-            f"Train Loss: {train_loss:.4f} | "
-            f"Val Loss: {val_loss:.4f} | "
+            f"Train: {train_loss:.4f} (ppl: {train_ppl:.1f}) | "
+            f"Val: {val_loss:.4f} (ppl: {val_ppl:.1f}) | "
+            f"LR: {current_lr:.2e} | "
             f"Time: {elapsed:.1f}s"
         )
 
@@ -422,6 +583,10 @@ class Trainer:
 
         avg_loss = total_loss / max(1, num_batches)
         self.current_epoch += 1
+
+        # Step the learning rate scheduler if enabled
+        if self.scheduler is not None:
+            self.scheduler.step()
 
         return avg_loss
 
@@ -556,9 +721,12 @@ class Trainer:
         self.model.eval()
 
         try:
+            # Get EOS token ID if available
+            eos_token_id = getattr(tokenizer, 'eos_token_id', None)
+
             # Encode prompt and generate
             prompt_tensor = self._encode_prompt(prompt, tokenizer)
-            generated_ids = self._generate_tokens(prompt_tensor, generation_params)
+            generated_ids = self._generate_tokens(prompt_tensor, generation_params, eos_token_id)
 
             # Decode with error handling
             return self._decode_generated_text(generated_ids, tokenizer)
@@ -584,7 +752,10 @@ class Trainer:
             [encoded_prompt], dtype=torch.long, device=self.device
         )
 
-    def _generate_tokens(self, prompt_tensor: torch.Tensor, params: Dict[str, Any]) -> torch.Tensor:
+    def _generate_tokens(
+        self, prompt_tensor: torch.Tensor, params: Dict[str, Any],
+        eos_token_id: Optional[int] = None
+    ) -> torch.Tensor:
         """Generate tokens using model's generate method or fallback."""
         with torch.no_grad():
             if hasattr(self.model, "generate"):
@@ -595,9 +766,12 @@ class Trainer:
                     top_k=params["top_k"],
                 )
             else:
-                return self._fallback_generation(prompt_tensor, params)
+                return self._fallback_generation(prompt_tensor, params, eos_token_id)
 
-    def _fallback_generation(self, prompt_tensor: torch.Tensor, params: Dict[str, Any]) -> torch.Tensor:
+    def _fallback_generation(
+        self, prompt_tensor: torch.Tensor, params: Dict[str, Any],
+        eos_token_id: Optional[int] = None
+    ) -> torch.Tensor:
         """Fallback generation method when model doesn't have generate method."""
         generated_ids = prompt_tensor.clone()
         vocab_size = self.config.vocab_size
@@ -610,6 +784,10 @@ class Trainer:
             # Sample next token
             next_token = self._sample_next_token(logits, params, vocab_size)
             generated_ids = torch.cat([generated_ids, next_token], dim=1)
+
+            # Stop if EOS token is generated
+            if eos_token_id is not None and next_token.item() == eos_token_id:
+                break
 
         return generated_ids
 
@@ -696,6 +874,89 @@ class Trainer:
         elif self.val_dataset is not None:
             return self.val_dataset.tokenizer
         return None
+
+    def sample_during_training(
+        self,
+        prompts: Optional[List[str]] = None,
+        num_tokens: int = 50,
+        temperature: float = 0.8,
+        log_samples: bool = True,
+    ) -> List[str]:
+        """Generate samples during training for quality monitoring.
+
+        This method generates text samples at various points during training
+        to monitor generation quality progression.
+
+        Args:
+            prompts: List of prompt strings to complete
+            num_tokens: Number of tokens to generate per prompt
+            temperature: Sampling temperature (lower = more deterministic)
+            log_samples: Whether to log samples to the logger
+
+        Returns:
+            List of generated text samples
+        """
+        # Default prompts for story-style text
+        default_prompts = [
+            "Once upon a time",
+            "The little ",
+            "One day, a ",
+        ]
+        prompts = prompts or default_prompts
+
+        tokenizer = self._get_tokenizer_from_datasets()
+        if tokenizer is None:
+            logger.warning("No tokenizer available for sample generation")
+            return []
+
+        samples = []
+        self.model.eval()
+
+        for prompt in prompts:
+            try:
+                generated = self.generate_text(
+                    prompt,
+                    tokenizer,
+                    max_tokens=num_tokens,
+                    temperature=temperature,
+                    top_k=50,
+                )
+                samples.append(generated)
+
+                if log_samples:
+                    # Truncate for logging
+                    display_text = generated[:150] + "..." if len(generated) > 150 else generated
+                    # Replace newlines for cleaner logging
+                    display_text = display_text.replace('\n', ' ')
+                    logger.info(f"Sample: {display_text}")
+
+            except Exception as e:
+                logger.warning(f"Sample generation failed for prompt '{prompt}': {e}")
+                samples.append(f"[Generation failed: {e}]")
+
+        self.model.train()
+        return samples
+
+    def get_training_metrics(self) -> Dict[str, Any]:
+        """Get comprehensive training metrics.
+
+        Returns:
+            Dictionary with current training metrics:
+            - epoch: Current epoch
+            - global_step: Total training steps
+            - best_val_loss: Best validation loss seen
+            - best_val_ppl: Best validation perplexity
+            - learning_rate: Current learning rate
+        """
+        current_lr = self.optimizer.param_groups[0]['lr']
+
+        return {
+            "epoch": self.current_epoch,
+            "global_step": self.global_step,
+            "best_val_loss": self.best_val_loss,
+            "best_val_ppl": compute_perplexity(self.best_val_loss) if self.best_val_loss < float('inf') else float('inf'),
+            "learning_rate": current_lr,
+        }
 
 
 def create_trainer(config: Config, data_file: str) -> Trainer:
