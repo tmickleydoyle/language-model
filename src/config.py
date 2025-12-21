@@ -147,10 +147,20 @@ class Config:
     max_epochs: int = 100
     learning_rate: float = 3e-4
     weight_decay: float = 0.01
+    use_scheduler: bool = False  # Enable learning rate scheduling
+    warmup_epochs: int = 5  # Warmup epochs for LR scheduler
     eval_interval: int = 100
     eval_iters: int = 100
     save_interval: int = 100
     max_batches_per_epoch: int = 100
+
+    # Recursive reasoning parameters
+    use_recursive: bool = False  # Enable recursive latent reasoning
+    recursion_depth: int = 3  # Number of recursion iterations (T)
+    latent_steps: int = 6  # Number of latent reasoning steps per recursion (n)
+    max_supervision_steps: int = 5  # Maximum supervision steps during training
+    early_stop_threshold: float = 0.5  # Confidence threshold for early stopping
+    confidence_loss_weight: float = 0.1  # Weight for confidence calibration loss
 
     # Fine-tuning specific parameters
     grad_clip: float = 1.0
@@ -208,13 +218,17 @@ class Config:
         # Auto-calculate KV heads if not set
         if self.n_kv_head is None:
             self.n_kv_head = max(1, self.n_head // 4)
-        
+
         # Auto-calculate MLA dimensions if not set
         if self.kv_latent_dim is None:
             self.kv_latent_dim = max(64, self.n_embd // 8)
-        
+
         if self.v_head_dim is None:
-            self.v_head_dim = max(32, (self.n_embd // self.n_head) // 2)
+            # Protect against division by zero
+            if self.n_head > 0:
+                self.v_head_dim = max(32, (self.n_embd // self.n_head) // 2)
+            else:
+                self.v_head_dim = 32  # Fallback default
 
     def _set_device(self) -> None:
         """Set device if not specified or if auto."""
@@ -347,3 +361,131 @@ class Config:
     def get_device(self) -> str:
         """Get the configured device."""
         return self.device or "cpu"
+
+    @classmethod
+    def small_model_preset(
+        cls,
+        vocab_size: int = 6000,
+        block_size: int = 256,
+        device: Optional[str] = None,
+    ) -> "Config":
+        """Create a small model configuration optimized for limited data.
+
+        This configuration creates a ~15-20M parameter model that can learn
+        effectively from 5-50MB of training data. Designed for:
+        - Apple Silicon Macs (MPS)
+        - Limited training data (1-15M tokens)
+        - Domain-specific training (code, docs, etc.)
+
+        Args:
+            vocab_size: Vocabulary size (4000-8000 recommended for small data)
+            block_size: Context window size (256-512 for small data)
+            device: Device override (auto-detected if None)
+
+        Returns:
+            Config object with small model settings
+
+        Example:
+            >>> config = Config.small_model_preset(vocab_size=6000)
+            >>> # Creates ~15M param model optimized for small datasets
+        """
+        return cls(
+            # Architecture - right-sized for limited data (~15-20M params)
+            n_embd=384,           # Reduced from 768 (halves embedding params)
+            n_head=6,             # 6 heads, 64 dim each = 384
+            n_layer=6,            # 6 layers (reduced from 12)
+            block_size=block_size,  # Shorter context for efficiency
+            dropout=0.2,          # Higher dropout for regularization
+
+            # Keep modern features that help at small scale
+            attention_type='gqa',  # GQA still efficient
+            position_encoding_type='rope',  # RoPE for position
+            use_moe=False,         # No MoE for small models (overkill)
+            n_kv_head=2,          # Minimal KV heads for GQA
+
+            # Vocabulary
+            vocab_size=vocab_size,
+
+            # Training - conservative for small data
+            batch_size=32,        # Moderate batch size
+            max_epochs=100,       # Allow many epochs for small data
+            learning_rate=3e-4,   # Standard learning rate
+            weight_decay=0.1,     # Higher regularization for small data
+            use_scheduler=True,   # Use LR scheduling
+            warmup_epochs=10,     # Warm up learning rate
+            eval_interval=5,      # Evaluate frequently
+            eval_iters=50,        # Fewer eval iterations
+            save_interval=20,     # Save less frequently
+            max_batches_per_epoch=200,  # Limit batches per epoch
+
+            # Generation
+            default_max_tokens=100,
+            default_temperature=0.8,
+            default_top_k=50,
+
+            # System
+            device=device,
+            seed=42,
+            fp16=False,  # MPS doesn't benefit from fp16
+
+            # Logging
+            log_level="INFO",
+        )
+
+    @classmethod
+    def tiny_model_preset(
+        cls,
+        vocab_size: int = 4000,
+        device: Optional[str] = None,
+    ) -> "Config":
+        """Create a tiny model for quick experiments (~5M parameters).
+
+        Use this for rapid prototyping and testing on very small datasets.
+
+        Args:
+            vocab_size: Vocabulary size (2000-4000 for tiny data)
+            device: Device override
+
+        Returns:
+            Config object with tiny model settings
+        """
+        return cls(
+            # Tiny architecture (~5M params)
+            n_embd=256,
+            n_head=4,
+            n_layer=4,
+            block_size=128,
+            dropout=0.3,           # Increased from 0.2
+
+            # Simple architecture
+            attention_type='gqa',
+            position_encoding_type='rope',
+            use_moe=False,
+            n_kv_head=1,
+
+            # Vocabulary
+            vocab_size=vocab_size,
+
+            # Training - stronger regularization
+            batch_size=32,
+            max_epochs=50,
+            learning_rate=3e-4,    # Reduced from 5e-4
+            weight_decay=0.2,      # Increased from 0.1
+            use_scheduler=True,
+            warmup_epochs=5,
+            eval_interval=5,
+            eval_iters=30,
+            save_interval=10,
+            max_batches_per_epoch=100,
+
+            # Generation
+            default_max_tokens=50,
+            default_temperature=0.8,
+            default_top_k=40,
+
+            # System
+            device=device,
+            seed=42,
+            fp16=False,
+            log_level="INFO",
+        )

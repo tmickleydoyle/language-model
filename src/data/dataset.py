@@ -29,12 +29,14 @@ class TextDataset:
     - Batch generation for training and evaluation
     - Support for variable sequence lengths with padding
     - Comprehensive validation and error handling
+    - Optional BOS/EOS token insertion for sequence boundaries
 
     Args:
         text: Optional raw text data string
         file_path: Optional path to text file
         tokenizer: BPE tokenizer instance
         block_size: Context window size for sequences
+        add_special_tokens: Whether to add BOS/EOS tokens to each document
 
     Attributes:
         text: Raw text data
@@ -51,12 +53,14 @@ class TextDataset:
         file_path: Optional[str] = None,
         tokenizer: Optional[BPETokenizer] = None,
         block_size: int = 256,
+        add_special_tokens: bool = True,
     ):
         """Initialize the dataset with validation and setup."""
         self._validate_initialization_params(text, file_path, tokenizer, block_size)
 
         self.tokenizer = tokenizer
         self.block_size = block_size
+        self.add_special_tokens = add_special_tokens
 
         # Load and validate text data
         self.text = self._load_text_data(text, file_path)
@@ -108,8 +112,65 @@ class TextDataset:
         return loaded_text
 
     def _tokenize_text(self) -> torch.Tensor:
-        """Tokenize the text and convert to tensor."""
-        token_list = self.tokenizer.encode(self.text)
+        """Tokenize the text and convert to tensor.
+
+        If add_special_tokens is True, document boundaries (\\n\\n) will have
+        EOS and BOS tokens inserted. Uses batch encoding for speed.
+        """
+        if self.add_special_tokens and hasattr(self.tokenizer, 'encode_with_special_tokens'):
+            # Batch encode: encode entire text at once, then insert BOS/EOS at boundaries
+            doc_separator = "\n\n"
+
+            # Count documents for logging
+            num_docs = self.text.count(doc_separator) + 1
+            print(f"Batch encoding {len(self.text):,} chars ({num_docs:,} documents)...", flush=True)
+
+            # Encode the separator to find its token pattern
+            sep_tokens = self.tokenizer.encode(doc_separator)
+
+            # Encode entire text at once (much faster than per-document)
+            print(f"  Encoding full text...", flush=True)
+            all_tokens = self.tokenizer.encode(self.text)
+            print(f"  Encoded to {len(all_tokens):,} tokens", flush=True)
+
+            # Insert BOS/EOS at document boundaries
+            print(f"  Inserting BOS/EOS at {num_docs:,} document boundaries...", flush=True)
+            bos_id = self.tokenizer.BOS_TOKEN_ID
+            eos_id = self.tokenizer.EOS_TOKEN_ID
+
+            # Find and replace separator tokens with EOS + BOS
+            if len(sep_tokens) > 0:
+                result = [bos_id]  # Start with BOS
+                i = 0
+                sep_len = len(sep_tokens)
+                boundaries_found = 0
+
+                while i < len(all_tokens):
+                    # Check if current position matches separator pattern
+                    if (i + sep_len <= len(all_tokens) and
+                        all_tokens[i:i + sep_len] == sep_tokens):
+                        # Replace separator with EOS + BOS
+                        result.append(eos_id)
+                        result.append(bos_id)
+                        i += sep_len
+                        boundaries_found += 1
+                    else:
+                        result.append(all_tokens[i])
+                        i += 1
+
+                result.append(eos_id)  # End with EOS
+                token_list = result
+                print(f"  Inserted {boundaries_found + 1:,} BOS and {boundaries_found + 1:,} EOS tokens", flush=True)
+            else:
+                # Fallback: just wrap with BOS/EOS
+                token_list = [bos_id] + all_tokens + [eos_id]
+
+            print(f"Encoding complete: {len(token_list):,} total tokens", flush=True)
+        else:
+            print(f"Encoding {len(self.text):,} characters...", flush=True)
+            token_list = self.tokenizer.encode(self.text)
+            print(f"Encoding complete: {len(token_list):,} tokens", flush=True)
+
         tokens = torch.tensor(token_list, dtype=torch.long)
 
         self._validate_tokenization(tokens)

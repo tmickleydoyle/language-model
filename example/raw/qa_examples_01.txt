@@ -1,8 +1,0 @@
-Q: What is the capital of France?
-A: Paris.
-Q: How many continents are there?
-A: Seven.
-Q: Who wrote 'Romeo and Juliet'?
-A: William Shakespeare.
-Q: What is the boiling point of water?
-A: 100 degrees Celsius.

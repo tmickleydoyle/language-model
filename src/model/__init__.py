@@ -31,11 +31,19 @@ from .gpt import (
     create_optimal_model
 )
 
+from .recursive import (
+    RecursiveGPTLanguageModel,
+    RecursiveTransformerBlock,
+    ConfidenceHead,
+    create_recursive_model
+)
+
 # Use modern implementation as default
 GPTLanguageModel = ModernGPTLanguageModel
 create_model = create_modern_model
 
-# Create alias for backwards compatibility with tests
+# Backwards compatibility alias for tests (DO NOT USE IN NEW CODE)
+# Modern transformers should use ModernTransformerBlock directly
 Block = ModernTransformerBlock
 
 
@@ -56,37 +64,43 @@ def create_model_factory(config, vocab_size):
 __all__ = [
     # Main model classes
     "GPTLanguageModel",  # Modern by default
-    "ModernGPTLanguageModel", 
+    "ModernGPTLanguageModel",
     "ClassicGPTLanguageModel",
-    
+    "RecursiveGPTLanguageModel",  # Recursive reasoning variant
+
     # Modern attention mechanisms
     "GroupedQueryAttention",
-    "MultiHeadLatentAttention", 
+    "MultiHeadLatentAttention",
     "SlidingWindowAttention",
-    
+
     # Position encodings
     "RotaryPositionalEmbedding",
     "ContextualPositionalEmbedding",
-    
+
     # Feedforward networks
     "xSwiGLU",  # Modern default
     "SwiGLU",
     "MixtureOfExperts",
-    
+
+    # Recursive reasoning components
+    "RecursiveTransformerBlock",
+    "ConfidenceHead",
+
     # Other components
     "RMSNorm",
     "ModernTransformerBlock",
-    
+
     # Classic components (for reference)
     "MultiHeadAttention",
-    "FeedForward", 
+    "FeedForward",
     "TransformerBlock",
     "Block",  # Alias for backwards compatibility
-    
+
     # Factory functions
     "create_model",  # Modern by default
     "create_modern_model",
     "create_optimal_model",  # Best defaults
     "create_classic_model",
+    "create_recursive_model",  # Recursive variant
     "create_model_factory"
 ]

@@ -44,6 +44,9 @@ input.txt
 encoder.txt
 decoder.txt
 
+# Training data
+data/
+
 # Checkpoints and models
 checkpoints/
 *_checkpoints/
@@ -57,6 +60,12 @@ robust_checkpoints/
 simple_checkpoints/
 *.pth
 tokenizer.json
+
+# Trained models
+prose_model_*/
+test_model*/
+tokenizers/
+models/
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -102,3 +111,9 @@ logs/
 *.temp
 qa_output.txt
 training.log
+
+# Archive (deprecated scripts)
+archive/
+
+# Files
+CLAUDE.md
