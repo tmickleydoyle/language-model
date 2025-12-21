@@ -166,33 +166,46 @@ def train_model(args) -> None:
     if total_chars < 10000:
         print("  WARNING: Very small dataset. Consider getting more data.")
 
-    # 2. Determine vocabulary size
+    # 2. Determine vocabulary size and configure tokenizer
     print("\n[2/6] Configuring tokenizer...")
-    if args.vocab_size:
-        vocab_size = args.vocab_size
-    else:
-        vocab_size = estimate_optimal_vocab(text, estimated_tokens)
-    print(f"  Target vocabulary size: {vocab_size}")
-
-    # Train tokenizer (optionally on a sample for speed)
     tokenizer = BPETokenizer()
 
-    if args.tokenizer_sample_ratio < 1.0:
-        sample_size = int(len(text) * args.tokenizer_sample_ratio)
-        tokenizer_text = text[:sample_size]
-        print(f"  Training BPE tokenizer on {args.tokenizer_sample_ratio*100:.0f}% sample ({len(tokenizer_text):,} chars)...")
+    if args.tokenizer_path:
+        # Load existing tokenizer
+        print(f"  Loading existing tokenizer from {args.tokenizer_path}...")
+        tokenizer.load(args.tokenizer_path)
+        actual_vocab = tokenizer.vocab_size
+        print(f"  Loaded tokenizer with {actual_vocab} tokens")
     else:
-        tokenizer_text = text
-        print("  Training BPE tokenizer on full dataset...")
+        # Train new tokenizer
+        if args.vocab_size:
+            vocab_size = args.vocab_size
+        else:
+            vocab_size = estimate_optimal_vocab(text, estimated_tokens)
+        print(f"  Target vocabulary size: {vocab_size}")
 
-    tokenizer.train(tokenizer_text, max_vocab_size=vocab_size, min_frequency=2)
-    actual_vocab = tokenizer.vocab_size
-    print(f"  Actual vocabulary size: {actual_vocab}")
+        if args.tokenizer_sample_ratio < 1.0:
+            sample_size = int(len(text) * args.tokenizer_sample_ratio)
+            tokenizer_text = text[:sample_size]
+            print(f"  Training BPE tokenizer on {args.tokenizer_sample_ratio*100:.0f}% sample ({len(tokenizer_text):,} chars)...")
+        else:
+            tokenizer_text = text
+            print("  Training BPE tokenizer on full dataset...")
 
-    # Get coverage stats
-    coverage = tokenizer.get_coverage_stats(text)
-    print(f"  Compression ratio: {coverage['compression_ratio']:.2f}x")
-    print(f"  Actual tokens: {coverage['total_tokens']:,}")
+        tokenizer.train(tokenizer_text, max_vocab_size=vocab_size, min_frequency=2)
+        actual_vocab = tokenizer.vocab_size
+        print(f"  Actual vocabulary size: {actual_vocab}")
+
+    # Get coverage stats (skip if using existing tokenizer - encoding is slow)
+    if args.tokenizer_path:
+        # Estimate based on typical compression ratio (~2.5x for BPE)
+        estimated_total_tokens = total_chars // 3
+        print(f"  Estimated tokens: ~{estimated_total_tokens:,} (skipping full encode)")
+    else:
+        coverage = tokenizer.get_coverage_stats(text)
+        print(f"  Compression ratio: {coverage['compression_ratio']:.2f}x")
+        print(f"  Actual tokens: {coverage['total_tokens']:,}")
+        estimated_total_tokens = coverage['total_tokens']
 
     # 3. Create configuration
     print("\n[3/6] Creating model configuration...")
@@ -206,7 +219,7 @@ def train_model(args) -> None:
             8 * config.n_embd * config.n_embd    # FFN (approx for SwiGLU)
         )
     )
-    tokens_per_param = coverage['total_tokens'] / param_estimate
+    tokens_per_param = estimated_total_tokens / param_estimate
 
     print(f"  Model preset: {args.preset}")
     print(f"  Embedding dim: {config.n_embd}")
@@ -417,6 +430,12 @@ Examples:
         type=float,
         default=1.0,
         help="Fraction of data for tokenizer training (default: 1.0 = full, use 0.1 for 10%% sample)"
+    )
+    parser.add_argument(
+        "--tokenizer-path",
+        type=str,
+        default=None,
+        help="Path to existing tokenizer to load (skips tokenizer training)"
     )
     parser.add_argument(
         "--show-samples",

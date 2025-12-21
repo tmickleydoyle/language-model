@@ -63,7 +63,8 @@ tokenizer.json
 
 # Trained models
 prose_model_*/
-test_model/
+test_model*/
+tokenizers/
 models/
 
 # Jupyter Notebook

@@ -122,9 +122,10 @@ def fetch_tinystories(
             f.write(story)
 
     # Also save combined file for convenience
+    # Use \n\n as separator (dataset.py looks for this to insert BOS/EOS tokens)
     combined_path = output_path / "_combined.txt"
     with open(combined_path, 'w', encoding='utf-8') as f:
-        f.write("\n\n---\n\n".join(stories))
+        f.write("\n\n".join(stories))
 
     stats["combined_file"] = str(combined_path)
     stats["estimated_tokens"] = stats["total_chars"] // 4
