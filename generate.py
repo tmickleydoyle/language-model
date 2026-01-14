@@ -9,16 +9,28 @@ from pathlib import Path
 from src.config import Config
 from src.model import create_model
 from src.tokenizer import BPETokenizer
+from src.tokenizer_hf import HFTokenizer
 
 
 def load_model(model_dir: str):
     """Load model and tokenizer from directory."""
     model_path = Path(model_dir)
 
-    # Load tokenizer
-    tokenizer = BPETokenizer()
-    tokenizer.load(str(model_path / "tokenizer"))
-    print(f"Loaded tokenizer: {tokenizer.vocab_size} tokens")
+    # Load tokenizer - detect type based on files present
+    hf_tokenizer_path = model_path / "tokenizer.json"
+    bpe_tokenizer_path = model_path / "tokenizer.vocab"
+
+    if hf_tokenizer_path.exists():
+        # HuggingFace tokenizer (32k model)
+        tokenizer = HFTokenizer(str(hf_tokenizer_path))
+        print(f"Loaded HF tokenizer: {tokenizer.vocab_size} tokens")
+    elif bpe_tokenizer_path.exists():
+        # Legacy BPE tokenizer
+        tokenizer = BPETokenizer()
+        tokenizer.load(str(model_path / "tokenizer"))
+        print(f"Loaded BPE tokenizer: {tokenizer.vocab_size} tokens")
+    else:
+        raise FileNotFoundError(f"No tokenizer found in {model_path}")
 
     # Load checkpoint
     checkpoint_path = model_path / "best_model.pth"
@@ -79,8 +91,8 @@ def generate(
     tokenizer,
     config,
     prompt: str,
-    max_tokens: int = 100,
-    temperature: float = 0.8,
+    max_tokens: int = 1500,
+    temperature: float = 0.5,
     top_k: int = 50,
     add_bos: bool = True,
 ) -> str:
@@ -158,8 +170,8 @@ def interactive_mode(model, tokenizer, config):
     print("  'quit' - Exit")
     print()
     print("The model will automatically:")
-    print(f"  - Start with {BPETokenizer.BOS_TOKEN} (beginning of story)")
-    print(f"  - Stop at {BPETokenizer.EOS_TOKEN} (end of story)")
+    print("  - Start with <bos> (beginning of story)")
+    print("  - Stop at <eos> (end of story)")
     print("=" * 50)
 
     temperature = 0.8

@@ -66,6 +66,9 @@ prose_model_*/
 test_model*/
 tokenizers/
 models/
+muon_model_*/
+logic_model/
+instruct_model/
 
 # Jupyter Notebook
 .ipynb_checkpoints
